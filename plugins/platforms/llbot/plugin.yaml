@@ -1,0 +1,70 @@
+name: llbot-platform
+label: LLBot
+kind: platform
+version: 1.0.0
+description: >
+  LLBot gateway adapter for Hermes Agent. Connects to an LLBot (LLOneBot)
+  instance over the OneBot v11 protocol using a forward WebSocket — Hermes
+  dials llbot's WebSocket server and relays QQ private/group messages to/from
+  the Hermes agent. Supports text, image, voice, file, and poke (戳一戳).
+author: Hermes Agent
+# ``requires_env`` entries are surfaced in ``hermes config`` / ``hermes setup``
+# UI via the platform-plugin env var injector in ``hermes_cli/config.py``.
+requires_env:
+  - name: LLBOT_WS_URL
+    description: "Forward WebSocket URL of the LLBot OneBot v11 server (e.g. ws://127.0.0.1:3001)"
+    prompt: "LLBot WebSocket URL"
+    password: false
+optional_env:
+  - name: LLBOT_ACCESS_TOKEN
+    description: "Access token for the OneBot v11 connection (sent as Authorization: Bearer); leave empty if llbot has no token configured"
+    prompt: "LLBot access token (optional)"
+    password: true
+  - name: LLBOT_REQUIRE_MENTION
+    description: "Whether group messages must @mention the bot to be processed (1/true/yes to require, default: true)"
+    prompt: "Require @mention in groups? (true/false)"
+    password: false
+  - name: LLBOT_ALLOWED_USERS
+    description: "Comma-separated QQ user IDs allowed to talk to the bot (empty = rely on gateway default policy)"
+    prompt: "Allowed QQ user IDs (comma-separated)"
+    password: false
+  - name: LLBOT_ALLOWED_GROUPS
+    description: "Comma-separated group numbers the bot may interact in (empty = all groups). Chat-level admission, checked before the mention gate."
+    prompt: "Allowed group numbers (comma-separated, or empty)"
+    password: false
+  - name: LLBOT_ALLOWED_DMS
+    description: "Comma-separated QQ user IDs whose private chats the bot may interact in (empty = all DMs). Chat-level admission for DMs."
+    prompt: "Allowed DM user IDs (comma-separated, or empty)"
+    password: false
+  - name: LLBOT_WAKE_WORDS
+    description: "Comma-separated regex patterns that trigger the agent in groups without an @mention (default: Arona,阿罗娜). Useful as a name-call / wake word."
+    prompt: "Wake-word regexes (comma-separated, default Arona,阿罗娜)"
+    password: false
+  - name: LLBOT_ALLOW_ALL_USERS
+    description: "Allow anyone to talk to the bot without an allowlist (dev only)"
+    prompt: "Allow all users? (true/false)"
+    password: false
+  - name: LLBOT_HOME_CHANNEL
+    description: "Default chat for cron / notification delivery (e.g. group:12345 or private:67890)"
+    prompt: "Home channel (e.g. group:12345)"
+    password: false
+  - name: LLBOT_OBSERVE_UNMENTIONED
+    description: "Mode B: store unaddressed group messages as context for the next @bot turn (1/true/yes to enable, default: false). Requires LLBOT_OBSERVE_ALLOWED_CHATS."
+    prompt: "Observe unaddressed group messages? (true/false)"
+    password: false
+  - name: LLBOT_OBSERVE_ALLOWED_CHATS
+    description: "Comma-separated group chat ids allowed for observation (e.g. group:123,group:456). Observation only runs in these chats."
+    prompt: "Observed chats (comma-separated group:<id>)"
+    password: false
+  - name: LLBOT_OBSERVE_MAX_MESSAGES
+    description: "Rolling-window cap: how many recent unaddressed messages to keep per chat (default 50). Older entries drop off as new ones arrive."
+    prompt: "Max observed messages per chat (default 50)"
+    password: false
+  - name: LLBOT_SHARED_MEDIA_HOST_DIR
+    description: "When llbot runs in Docker: host-side path of the shared media volume Hermes writes to (e.g. /home/bot/llbot/shared_media). Leave empty for same-host deployment."
+    prompt: "Shared media host dir (Docker, optional)"
+    password: false
+  - name: LLBOT_SHARED_MEDIA_CONTAINER_DIR
+    description: "When llbot runs in Docker: container-side path of the shared media volume llbot reads from (e.g. /openclaw_media). Pairs with LLBOT_SHARED_MEDIA_HOST_DIR."
+    prompt: "Shared media container dir (Docker, optional)"
+    password: false
