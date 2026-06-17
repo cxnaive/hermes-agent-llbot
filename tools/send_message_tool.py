@@ -547,6 +547,11 @@ def _parse_target_ref(platform_name: str, target_ref: str):
     # Matrix room IDs (start with !) and user IDs (start with @) are explicit
     if platform_name == "matrix" and (target_ref.startswith("!") or target_ref.startswith("@")):
         return target_ref, None, True
+    # llbot (OneBot v11): chat ids are "group:<group_id>" / "private:<user_id>".
+    # The target_ref after the "llbot:" prefix split is the full chat_id, used
+    # verbatim by the adapter (encode_chat_id format).
+    if platform_name == "llbot":
+        return target_ref, None, True
     # XMPP JIDs (user@server or room@conference.server) are explicit
     if platform_name == "xmpp" and "@" in target_ref:
         return target_ref, None, True
@@ -890,6 +895,19 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
                 chunk,
                 media_files=media_files if is_last else None,
                 thread_id=thread_id,
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
+    # --- llbot: native media via adapter (send_image/send_voice/send_document) ---
+    if getattr(platform, "value", "") == "llbot" and media_files:
+        last_result = None
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            result = await _send_llbot_via_adapter(
+                chat_id, chunk, media_files=media_files if is_last else [],
             )
             if isinstance(result, dict) and result.get("error"):
                 return result
@@ -1644,6 +1662,52 @@ async def _send_qqbot(pconfig, chat_id, message):
             return _error(f"QQBot send failed: channel={resp.status_code} c2c={resp_c2c.status_code} group={resp_group.status_code}")
     except Exception as e:
         return _error(f"QQBot send failed: {e}")
+
+
+async def _send_llbot_via_adapter(chat_id, text, media_files=None, force_document=False):
+    """Send text + media to llbot via the live gateway adapter.
+
+    llbot (OneBot v11) sends media natively through the adapter's
+    send_image_file / send_voice / send_document (image/record/file segments).
+    Requires the gateway running in this process (the adapter owns the WS).
+    """
+    try:
+        from gateway.run import _gateway_runner_ref
+        from gateway.config import Platform
+        runner = _gateway_runner_ref()
+    except Exception:
+        runner = None
+    if runner is None:
+        return {"error": "llbot media delivery requires the gateway running in this process"}
+    try:
+        adapter = runner.adapters.get(Platform("llbot"))
+    except Exception:
+        adapter = None
+    if adapter is None:
+        return {"error": "No live llbot adapter (is the gateway running with llbot enabled?)"}
+
+    results = []
+    if text and text.strip():
+        try:
+            results.append(await adapter.send(chat_id=chat_id, content=text))
+        except Exception as e:
+            return {"error": f"llbot text send failed: {e}"}
+    for item in (media_files or []):
+        path = item[0] if isinstance(item, (tuple, list)) else item
+        is_voice = item[1] if isinstance(item, (tuple, list)) else False
+        try:
+            if is_voice:
+                results.append(await adapter.send_voice(chat_id=chat_id, audio_path=str(path)))
+            elif force_document:
+                results.append(await adapter.send_document(chat_id=chat_id, file_path=str(path)))
+            else:
+                results.append(await adapter.send_image_file(chat_id=chat_id, image_path=str(path)))
+        except Exception as e:
+            return {"error": f"llbot media send failed for {path}: {e}"}
+    if results and all(getattr(r, "success", False) for r in results):
+        return {"success": True, "message_id": getattr(results[-1], "message_id", "") or ""}
+    errs = [getattr(r, "error", "") for r in results if not getattr(r, "success", False)]
+    return {"error": "; ".join(e for e in errs if e) or "llbot send failed"}
 
 
 async def _send_yuanbao(chat_id, message, media_files=None):
