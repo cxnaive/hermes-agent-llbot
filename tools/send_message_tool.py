@@ -303,6 +303,105 @@ def _platform_enum(platform_name):
         return None, f"Unknown platform: {platform_name}"
 
 
+def _parse_target_ref(platform_name: str, target_ref: str):
+    """Parse a tool target into chat_id/thread_id and whether it is explicit."""
+    if platform_name == "telegram":
+        match = _TELEGRAM_TOPIC_TARGET_RE.fullmatch(target_ref)
+        if match:
+            return match.group(1), match.group(2), True
+        from plugins.platforms.telegram.telegram_ids import (
+            parse_telegram_username_target,
+        )
+
+        username = parse_telegram_username_target(target_ref)
+        if username:
+            return username, None, True
+    if platform_name == "feishu":
+        match = _FEISHU_TARGET_RE.fullmatch(target_ref)
+        if match:
+            return match.group(1), match.group(2), True
+    if platform_name == "discord":
+        match = _NUMERIC_TOPIC_RE.fullmatch(target_ref)
+        if match:
+            return match.group(1), match.group(2), True
+    if platform_name == "slack":
+        match = _SLACK_THREAD_TARGET_RE.fullmatch(target_ref)
+        if match:
+            return match.group(1), match.group(2), True
+        match = _SLACK_TARGET_RE.fullmatch(target_ref)
+        if match:
+            return match.group(1), None, True
+        match = _SLACK_USER_ID_RE.fullmatch(target_ref) or _SLACK_MENTION_RE.fullmatch(target_ref)
+        if match:
+            return f"user:{match.group(1)}", None, True
+        match = _SLACK_USER_NAME_RE.fullmatch(target_ref)
+        if match:
+            return f"user_name:{match.group(1)}", None, True
+    if platform_name == "matrix":
+        trimmed = target_ref.strip()
+        split_idx = trimmed.rfind(":$")
+        if split_idx > 0:
+            return trimmed[:split_idx], trimmed[split_idx + 1 :], True
+    if platform_name == "weixin":
+        match = _WEIXIN_TARGET_RE.fullmatch(target_ref)
+        if match:
+            return match.group(1), None, True
+    if platform_name == "yuanbao":
+        match = _YUANBAO_TARGET_RE.fullmatch(target_ref)
+        if match:
+            return match.group(1), None, True
+        if target_ref.strip().isdigit():
+            return f"group:{target_ref.strip()}", None, True
+        return None, None, False
+    if platform_name == "ntfy":
+        topic = target_ref.strip()
+        if topic:
+            return topic, None, True
+    if platform_name == "email":
+        match = _EMAIL_TARGET_RE.fullmatch(target_ref)
+        if match:
+            return target_ref.strip(), None, True
+    if platform_name == "whatsapp":
+        # Native WhatsApp JIDs (group @g.us, user @s.whatsapp.net, @lid, etc.)
+        # are explicit targets — pass through verbatim. E.164 '+' numbers fall
+        # through to the _PHONE_PLATFORMS handler below.
+        if _WHATSAPP_JID_RE.fullmatch(target_ref):
+            return target_ref.strip(), None, True
+    stripped_target = target_ref.strip()
+    if platform_name == "signal" and stripped_target.startswith("group:"):
+        group_id = stripped_target[len("group:"):].strip()
+        if group_id:
+            return f"group:{group_id}", None, True
+        return None, None, False
+    if platform_name in _PHONE_PLATFORMS:
+        match = _E164_TARGET_RE.fullmatch(target_ref)
+        if match:
+            # Preserve the leading '+' — signal-cli and sms/whatsapp adapters
+            # expect E.164 format for direct recipients.
+            return target_ref.strip(), None, True
+    if platform_name == "photon":
+        # Photon DM chat GUIDs ('any;-;+1555...') are platform-native ids the
+        # adapter resolves itself — pass through verbatim instead of bouncing
+        # them off the channel directory (mirrors the react handler).
+        if _PHOTON_DM_GUID_RE.fullmatch(target_ref.strip()):
+            return target_ref.strip(), None, True
+    if target_ref.lstrip("-").isdigit():
+        return target_ref, None, True
+    # Matrix room IDs (start with !) and user IDs (start with @) are explicit
+    if platform_name == "matrix" and (target_ref.startswith("!") or target_ref.startswith("@")):
+        return target_ref, None, True
+    # llbot (OneBot v11): chat ids are "group:<group_id>" / "private:<user_id>".
+    # The target_ref after the "llbot:" prefix split is the full chat_id, used
+    # verbatim by the adapter (encode_chat_id format).
+    if platform_name == "llbot":
+        return target_ref, None, True
+    # XMPP JIDs (user@server or room@conference.server) are explicit
+    if platform_name == "xmpp" and "@" in target_ref:
+        return target_ref, None, True
+
+    return None, None, False
+
+
 def _resolve_platform_config(platform_name, config):
     """``(platform, pconfig, registry_entry, error)``. Plugin platforms must be registered;
     disabled/missing platforms error, except Weixin, which may be configured purely via .env."""
@@ -713,7 +812,268 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
         return await _send_chunks(chunks, lambda chunk, is_last: sender(
             platform, pconfig, chat_id, chunk, media_files if is_last else empty_media, thread_id, force_document))
 
-    # Generic path: text only. Buzz delivers media natively via _send_via_adapter, so no warning.
+    # --- Discord: chunked delivery via the registry's standalone_sender_fn.
+    # The plugin's ``_standalone_send`` (registered in
+    # plugins/platforms/discord/adapter.py) handles forum channels, threads,
+    # and multipart media uploads.  ``_send_via_adapter`` tries the live
+    # in-process adapter first via ``adapter.send()``, but Discord's elif
+    # historically went straight to the HTTP path; we preserve that by
+    # explicitly invoking the registry hook here so behavior is unchanged.
+    if platform == Platform.DISCORD:
+        from gateway.platform_registry import platform_registry
+        entry = platform_registry.get("discord")
+        if entry is None or entry.standalone_sender_fn is None:
+            return {"error": "Discord plugin not registered or missing standalone_sender_fn"}
+        # MEDIA:<path> caption: single captionable file + short text rides as
+        # the media message content instead of a separate message before the
+        # attachment (single enforced decision in _media_caption_split). Cap on
+        # the platform's own message limit so the caption is always deliverable.
+        _dc_caption, _ = _media_caption_split(
+            message, media_files,
+            max_caption_len=(max_len or _DEFAULT_CAPTION_LIMIT),
+        )
+        if _dc_caption is not None:
+            result = await entry.standalone_sender_fn(
+                pconfig,
+                chat_id,
+                "",
+                thread_id=thread_id,
+                media_files=media_files,
+                caption=_dc_caption,
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            return result
+        last_result = None
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            result = await entry.standalone_sender_fn(
+                pconfig,
+                chat_id,
+                chunk,
+                thread_id=thread_id,
+                media_files=media_files if is_last else [],
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
+    # --- Matrix: route ALL sends through the native adapter so text is
+    # encrypted in E2EE rooms too (issue: text-only sends arrived with a red
+    # padlock because they took the raw-HTTP standalone path). The adapter
+    # reuses the live gateway's E2EE session when available (#46310) and falls
+    # back to an encryption-aware ephemeral adapter for standalone/cron. ---
+    if platform == Platform.MATRIX:
+        last_result = None
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            result = await _send_matrix_via_adapter(
+                pconfig,
+                chat_id,
+                chunk,
+                media_files=media_files if is_last else [],
+                thread_id=thread_id,
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
+    # --- Signal: native attachment support via JSON-RPC attachments param ---
+    if platform == Platform.SIGNAL and media_files:
+        last_result = None
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            result = await _send_signal(
+                pconfig.extra,
+                chat_id,
+                chunk,
+                media_files=media_files if is_last else [],
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
+    # --- Yuanbao: native media attachment support via running gateway adapter ---
+    if platform == Platform.YUANBAO and media_files:
+        last_result = None
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            result = await _send_yuanbao(
+                chat_id,
+                chunk,
+                media_files=media_files if is_last else None,
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
+    # --- Feishu: native media attachment support via the registry's
+    # standalone_sender_fn (plugins/platforms/feishu/adapter.py::_standalone_send). #41112
+    if platform == Platform.FEISHU and media_files:
+        from gateway.platform_registry import platform_registry as _pr_feishu
+        from hermes_cli.plugins import discover_plugins as _dp_feishu
+        _dp_feishu()
+        _feishu_entry = _pr_feishu.get("feishu")
+        if _feishu_entry is None or _feishu_entry.standalone_sender_fn is None:
+            return {"error": "Feishu plugin not registered or missing standalone_sender_fn"}
+        last_result = None
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            result = await _feishu_entry.standalone_sender_fn(
+                pconfig,
+                chat_id,
+                chunk,
+                media_files=media_files if is_last else None,
+                thread_id=thread_id,
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
+    # --- Slack: native media via files_upload_v2 in the plugin's
+    # standalone_sender_fn (plugins/platforms/slack/adapter.py::_standalone_send).
+    # Gateway in-channel MEDIA: delivery already worked; send_message previously
+    # omitted Slack attachments and told the model media was unsupported.
+    if platform == Platform.SLACK and media_files:
+        from gateway.platform_registry import platform_registry as _pr_slack
+        from hermes_cli.plugins import discover_plugins as _dp_slack
+        _dp_slack()
+        _slack_entry = _pr_slack.get("slack")
+        if _slack_entry is None or _slack_entry.standalone_sender_fn is None:
+            return {"error": "Slack plugin not registered or missing standalone_sender_fn"}
+        _sl_caption, _ = _media_caption_split(
+            message, media_files,
+            max_caption_len=(max_len or _DEFAULT_CAPTION_LIMIT),
+        )
+        if _sl_caption is not None:
+            result = await _slack_entry.standalone_sender_fn(
+                pconfig,
+                chat_id,
+                "",
+                thread_id=thread_id,
+                media_files=media_files,
+                caption=_sl_caption,
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            return result
+        last_result = None
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            result = await _slack_entry.standalone_sender_fn(
+                pconfig,
+                chat_id,
+                chunk,
+                thread_id=thread_id,
+                media_files=media_files if is_last else [],
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
+    # --- WhatsApp: native media attachment support via the registry's
+    # standalone_sender_fn (plugins/platforms/whatsapp/adapter.py::_standalone_send).
+    # The plugin uploads each file through the local Baileys bridge /send-media
+    # endpoint so images/videos/audio arrive as native bubbles, not documents. #41112
+    if platform == Platform.WHATSAPP and media_files:
+        from gateway.platform_registry import platform_registry as _pr_wa
+        from hermes_cli.plugins import discover_plugins as _dp_wa
+        _dp_wa()
+        _wa_entry = _pr_wa.get("whatsapp")
+        if _wa_entry is None or _wa_entry.standalone_sender_fn is None:
+            return {"error": "WhatsApp plugin not registered or missing standalone_sender_fn"}
+        # MEDIA:<path> caption: a single captionable file + short text rides
+        # as the media's native caption instead of a separate message before
+        # the bubble (single enforced decision in _media_caption_split). Cap on
+        # the platform's own message limit so the caption is always deliverable.
+        _wa_caption, _ = _media_caption_split(
+            message, media_files,
+            max_caption_len=(max_len or _DEFAULT_CAPTION_LIMIT),
+        )
+        last_result = None
+        if _wa_caption is not None:
+            # Single-file captioned send: no separate text chunk, caption on
+            # the media itself.
+            result = await _wa_entry.standalone_sender_fn(
+                pconfig,
+                chat_id,
+                "",
+                media_files=media_files,
+                thread_id=thread_id,
+                force_document=force_document,
+                caption=_wa_caption,
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            return result
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            result = await _wa_entry.standalone_sender_fn(
+                pconfig,
+                chat_id,
+                chunk,
+                media_files=media_files if is_last else None,
+                thread_id=thread_id,
+                force_document=force_document,
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
+    # --- Slack: prefer the live gateway adapter, then the plugin's
+    # standalone sender.  The live adapter is multi-workspace aware (it maps
+    # channels to the workspace client that owns them) and honors adapter-side
+    # gates like ignored_channels; the standalone Web-API path may only have a
+    # comma-separated token list.  ``_send_via_adapter`` tries the in-process
+    # adapter first and falls back to the registry standalone sender for
+    # out-of-process cron runs, preserving MEDIA delivery on the fallback
+    # (media-bearing sends were already intercepted by the branch above).
+    if platform == Platform.SLACK:
+        last_result = None
+        for i, chunk in enumerate(chunks):
+            is_last = i == len(chunks) - 1
+            result = await _send_via_adapter(
+                platform,
+                pconfig,
+                chat_id,
+                chunk,
+                thread_id=thread_id,
+                media_files=media_files if is_last else [],
+                force_document=force_document,
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
+    # --- llbot: native media via adapter (send_image/send_voice/send_document) ---
+    if getattr(platform, "value", "") == "llbot" and media_files:
+        last_result = None
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            result = await _send_llbot_via_adapter(
+                chat_id, chunk, media_files=media_files if is_last else [],
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
+    # --- Non-media platforms ---
+    if media_files and not message.strip():
+        return {
+            "error": (
+                f"send_message MEDIA delivery is currently only supported for telegram, discord, matrix, weixin, signal, yuanbao, feishu, whatsapp and slack; "
+                f"target {platform.value} had only media attachments"
+            )
+        }
     warning = None
     if media_files and platform_name != "buzz":
         if not message.strip():
@@ -743,3 +1103,49 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
             and not last_result.get("media_delivered")):
         last_result["warnings"] = [*last_result.get("warnings", []), warning]
     return last_result
+
+
+async def _send_llbot_via_adapter(chat_id, text, media_files=None, force_document=False):
+    """Send text + media to llbot via the live gateway adapter.
+
+    llbot (OneBot v11) sends media natively through the adapter's
+    send_image_file / send_voice / send_document (image/record/file segments).
+    Requires the gateway running in this process (the adapter owns the WS).
+    """
+    try:
+        from gateway.run import _gateway_runner_ref
+        from gateway.config import Platform
+        runner = _gateway_runner_ref()
+    except Exception:
+        runner = None
+    if runner is None:
+        return {"error": "llbot media delivery requires the gateway running in this process"}
+    try:
+        adapter = runner.adapters.get(Platform("llbot"))
+    except Exception:
+        adapter = None
+    if adapter is None:
+        return {"error": "No live llbot adapter (is the gateway running with llbot enabled?)"}
+
+    results = []
+    if text and text.strip():
+        try:
+            results.append(await adapter.send(chat_id=chat_id, content=text))
+        except Exception as e:
+            return {"error": f"llbot text send failed: {e}"}
+    for item in (media_files or []):
+        path = item[0] if isinstance(item, (tuple, list)) else item
+        is_voice = item[1] if isinstance(item, (tuple, list)) else False
+        try:
+            if is_voice:
+                results.append(await adapter.send_voice(chat_id=chat_id, audio_path=str(path)))
+            elif force_document:
+                results.append(await adapter.send_document(chat_id=chat_id, file_path=str(path)))
+            else:
+                results.append(await adapter.send_image_file(chat_id=chat_id, image_path=str(path)))
+        except Exception as e:
+            return {"error": f"llbot media send failed for {path}: {e}"}
+    if results and all(getattr(r, "success", False) for r in results):
+        return {"success": True, "message_id": getattr(results[-1], "message_id", "") or ""}
+    errs = [getattr(r, "error", "") for r in results if not getattr(r, "success", False)]
+    return {"error": "; ".join(e for e in errs if e) or "llbot send failed"}

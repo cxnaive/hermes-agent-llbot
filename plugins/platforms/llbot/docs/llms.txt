@@ -1,0 +1,373 @@
+# 幸运莉莉娅
+
+## Docs
+- [部署文档](https://api.luckylillia.com/doc-5341902.md): 
+- OneBot 11 [OneBot 11 接口说明](https://api.luckylillia.com/doc-7202281.md): 
+- OneBot 11 > 接口列表 [HTTP 调用/接收消息](https://api.luckylillia.com/doc-5416163.md): 
+- OneBot 11 > 接口列表 [Websocket 发送/接受消息](https://api.luckylillia.com/doc-5416167.md): 
+- OneBot 11 > 接口列表 [Token鉴权](https://api.luckylillia.com/doc-7948595.md): 
+- Milky [Milky 接口说明](https://api.luckylillia.com/doc-7842052.md): 
+- Satori [Satori 接口说明](https://api.luckylillia.com/doc-7573785.md): 
+
+## API Docs
+- OneBot 11 > 接口列表 > 用户 [点赞](https://api.luckylillia.com/api-149035376.md): 
+- OneBot 11 > 接口列表 > 用户 [好友列表](https://api.luckylillia.com/api-144641318.md): 
+- OneBot 11 > 接口列表 > 用户 [好友列表（带分组）](https://api.luckylillia.com/api-226464338.md): 
+- OneBot 11 > 接口列表 > 用户 [删除好友](https://api.luckylillia.com/api-227239179.md): 
+- OneBot 11 > 接口列表 > 用户 [处理好友申请](https://api.luckylillia.com/api-149701143.md): 
+- OneBot 11 > 接口列表 > 用户 [设置好友备注](https://api.luckylillia.com/api-234354198.md): 
+- OneBot 11 > 接口列表 > 用户 [获取陌生人信息](https://api.luckylillia.com/api-156648733.md): 
+- OneBot 11 > 接口列表 > 用户 [设置个人头像](https://api.luckylillia.com/api-156152067.md): 
+- OneBot 11 > 接口列表 > 用户 [好友戳一戳（双击头像）](https://api.luckylillia.com/api-226620269.md): 
+- OneBot 11 > 接口列表 > 用户 [获取我赞过谁列表](https://api.luckylillia.com/api-227239501.md): 
+- OneBot 11 > 接口列表 > 用户 [获取谁赞过我列表](https://api.luckylillia.com/api-247993651.md): 
+- OneBot 11 > 接口列表 > 用户 [获取官方机器人QQ号范围](https://api.luckylillia.com/api-170602981.md): 
+- OneBot 11 > 接口列表 > 用户 [移动好友分组](https://api.luckylillia.com/api-234354495.md): 
+- OneBot 11 > 接口列表 > 用户 [获取QQ或QQ群头像](https://api.luckylillia.com/api-318211672.md): 
+- OneBot 11 > 接口列表 > 用户 [获取被过滤好友请求](https://api.luckylillia.com/api-356195357.md): 此 API 需要 LLOneBot 6.2.0 及以上版本
+- OneBot 11 > 接口列表 > 用户 [处理被过滤好友请求](https://api.luckylillia.com/api-356196496.md): 此 API 需要 LLOneBot 6.2.0 及以上版本
+- OneBot 11 > 接口列表 > 用户 [设置登录号资料](https://api.luckylillia.com/api-387248605.md): 
+- OneBot 11 > 接口列表 > 用户 [设置输入状态](https://api.luckylillia.com/api-449484306.md): 此 API 需要 LLBot 7.12.3 及以上版本
+- OneBot 11 > 接口列表 > 群组 [获取群列表](https://api.luckylillia.com/api-120761715.md): 
+- OneBot 11 > 接口列表 > 群组 [获取群信息](https://api.luckylillia.com/api-147864169.md): 
+- OneBot 11 > 接口列表 > 群组 [获取群成员列表](https://api.luckylillia.com/api-120763084.md): 
+- OneBot 11 > 接口列表 > 群组 [获取群成员信息](https://api.luckylillia.com/api-129962341.md): 
+- OneBot 11 > 接口列表 > 群组 [群员戳一戳（双击头像）](https://api.luckylillia.com/api-226620319.md): 
+- OneBot 11 > 接口列表 > 群组 [获取群系统消息](https://api.luckylillia.com/api-227238038.md): 
+- OneBot 11 > 接口列表 > 群组 [处理加群请求](https://api.luckylillia.com/api-149642556.md): 
+- OneBot 11 > 接口列表 > 群组 [退群](https://api.luckylillia.com/api-149642881.md): 
+- OneBot 11 > 接口列表 > 群组 [设置群管理员](https://api.luckylillia.com/api-150140186.md): 
+- OneBot 11 > 接口列表 > 群组 [设置群名片](https://api.luckylillia.com/api-150140187.md): 
+- OneBot 11 > 接口列表 > 群组 [群禁言](https://api.luckylillia.com/api-150140189.md): 
+- OneBot 11 > 接口列表 > 群组 [群全体禁言](https://api.luckylillia.com/api-150140196.md): 
+- OneBot 11 > 接口列表 > 群组 [获取被禁言群员列表](https://api.luckylillia.com/api-311303893.md): 
+- OneBot 11 > 接口列表 > 群组 [设置群名](https://api.luckylillia.com/api-150140247.md): 
+- OneBot 11 > 接口列表 > 群组 [批量踢出群成员](https://api.luckylillia.com/api-327231780.md): 需要 5.6.0 及以上版本
+- OneBot 11 > 接口列表 > 群组 [群踢人](https://api.luckylillia.com/api-150140250.md): 
+- OneBot 11 > 接口列表 > 群组 [设置群头衔](https://api.luckylillia.com/api-224355364.md): 
+- OneBot 11 > 接口列表 > 群组 [群荣誉](https://api.luckylillia.com/api-174681709.md): 
+- OneBot 11 > 接口列表 > 群组 [获取群精华消息](https://api.luckylillia.com/api-174674213.md): 
+- OneBot 11 > 接口列表 > 群组 [设置群精华消息](https://api.luckylillia.com/api-227234474.md): 
+- OneBot 11 > 接口列表 > 群组 [删除群精华消息](https://api.luckylillia.com/api-227234575.md): 
+- OneBot 11 > 接口列表 > 群组 [获取群 @全体成员 剩余次数](https://api.luckylillia.com/api-227238875.md): 
+- OneBot 11 > 接口列表 > 群组 [发送群公告](https://api.luckylillia.com/api-227239056.md): 
+- OneBot 11 > 接口列表 > 群组 [获取群公告](https://api.luckylillia.com/api-170585759.md): 
+- OneBot 11 > 接口列表 > 群组 [群打卡](https://api.luckylillia.com/api-232894230.md): 
+- OneBot 11 > 接口列表 > 群组 [设置群消息接收方式](https://api.luckylillia.com/api-234356893.md): 
+- OneBot 11 > 接口列表 > 群组 [设置群备注](https://api.luckylillia.com/api-234358974.md): 
+- OneBot 11 > 接口列表 > 群组 [获取已过滤的加群通知](https://api.luckylillia.com/api-227239481.md): 
+- OneBot 11 > 接口列表 > 群组 [上传群相册](https://api.luckylillia.com/api-371578207.md): 
+- OneBot 11 > 接口列表 > 群组 [获取群相册列表](https://api.luckylillia.com/api-371903958.md): 
+- OneBot 11 > 接口列表 > 群组 [创建群相册](https://api.luckylillia.com/api-371912372.md): 
+- OneBot 11 > 接口列表 > 群组 [删除群相册](https://api.luckylillia.com/api-377144215.md): 
+- OneBot 11 > 接口列表 > 群组 [获取群相册媒体列表](https://api.luckylillia.com/api-449542365.md): 此 API 需要 LLBot 7.12.3 及以上版本
+- OneBot 11 > 接口列表 > 群组 [删除群公告](https://api.luckylillia.com/api-377208720.md): 
+- OneBot 11 > 接口列表 > 群组 [设置群头像](https://api.luckylillia.com/api-449678411.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊文本消息](https://api.luckylillia.com/api-226194727.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊回复消息](https://api.luckylillia.com/api-226195014.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊图片](https://api.luckylillia.com/api-226246813.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊文字+图片](https://api.luckylillia.com/api-226250368.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊系统表情](https://api.luckylillia.com/api-226251326.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊语音消息](https://api.luckylillia.com/api-226254797.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊视频消息](https://api.luckylillia.com/api-226266762.md): 视频不能超过100M
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊超级表情 骰子](https://api.luckylillia.com/api-226279076.md): 视频不能超过100M
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊超级表情 猜拳](https://api.luckylillia.com/api-226288106.md): 视频不能超过100M
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊QQ音乐卡片](https://api.luckylillia.com/api-226294366.md): 视频不能超过100M
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊网易云音乐卡片](https://api.luckylillia.com/api-226296597.md): 视频不能超过100M
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊自定义音乐卡片](https://api.luckylillia.com/api-226298355.md): 视频不能超过100M
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊卡片(json)消息](https://api.luckylillia.com/api-252765517.md): json内容无法自定义，需要找签好名带token的
+- OneBot 11 > 接口列表 > 消息 > 发送私聊消息 [发送私聊合并转发消息](https://api.luckylillia.com/api-226189040.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊文本消息](https://api.luckylillia.com/api-226300081.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊回复消息](https://api.luckylillia.com/api-226300082.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊@消息](https://api.luckylillia.com/api-226302513.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊图片](https://api.luckylillia.com/api-226391767.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊文字+图片](https://api.luckylillia.com/api-226300086.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊系统表情](https://api.luckylillia.com/api-226300088.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊语音消息](https://api.luckylillia.com/api-226392170.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊视频消息](https://api.luckylillia.com/api-226393202.md): 视频不能超过100M
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊超级表情 骰子](https://api.luckylillia.com/api-226300095.md): 视频不能超过100M
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊超级表情 猜拳](https://api.luckylillia.com/api-226300096.md): 视频不能超过100M
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊QQ音乐卡片](https://api.luckylillia.com/api-226300098.md): 视频不能超过100M
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊网易云音乐卡片](https://api.luckylillia.com/api-226300099.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊自定义音乐卡片](https://api.luckylillia.com/api-226300100.md): 
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊卡片(json)消息](https://api.luckylillia.com/api-252772577.md): json内容无法自定义，需要找签好名带token的
+- OneBot 11 > 接口列表 > 消息 > 发送群聊消息 [发送群聊合并转发消息](https://api.luckylillia.com/api-226189162.md): 
+- OneBot 11 > 接口列表 > 消息 [长连接接收消息](https://api.luckylillia.com/api-308870539.md): HTTP SSE 的方式接收消息 
+- OneBot 11 > 接口列表 > 消息 [转发单条好友消息](https://api.luckylillia.com/api-168354013.md): 
+- OneBot 11 > 接口列表 > 消息 [转发单条群消息](https://api.luckylillia.com/api-168362359.md): 
+- OneBot 11 > 接口列表 > 消息 [获取消息详情](https://api.luckylillia.com/api-147574979.md): 
+- OneBot 11 > 接口列表 > 消息 [撤回消息](https://api.luckylillia.com/api-124033506.md): 
+- OneBot 11 > 接口列表 > 消息 [获取消息文件详情](https://api.luckylillia.com/api-156061303.md): 
+- OneBot 11 > 接口列表 > 消息 [获取消息图片详情](https://api.luckylillia.com/api-151567554.md): 
+- OneBot 11 > 接口列表 > 消息 [获取消息语音详情](https://api.luckylillia.com/api-151571424.md): 
+- OneBot 11 > 接口列表 > 消息 [表情回应消息](https://api.luckylillia.com/api-167098304.md): 只支持群聊消息
+- OneBot 11 > 接口列表 > 消息 [获取好友历史消息记录](https://api.luckylillia.com/api-227239657.md): 
+- OneBot 11 > 接口列表 > 消息 [获取群历史消息](https://api.luckylillia.com/api-156808591.md): 
+- OneBot 11 > 接口列表 > 消息 [获取转发消息详情](https://api.luckylillia.com/api-159742006.md): 
+- OneBot 11 > 接口列表 > 消息 [标记消息已读](https://api.luckylillia.com/api-227239139.md): 
+- OneBot 11 > 接口列表 > 消息 [语音消息转文字](https://api.luckylillia.com/api-308868025.md): llonebot 5.1 版本才支持此 api
+- OneBot 11 > 接口列表 > 消息 [发送群 Ai 语音](https://api.luckylillia.com/api-333741857.md): 此 API 需要 LLOneBot 5.6.1 及以上版本
+- OneBot 11 > 接口列表 > 消息 [获取群 Ai 语音可用声色列表](https://api.luckylillia.com/api-333736037.md): 此 API 需要 LLOneBot 5.6.1 及以上版本
+- OneBot 11 > 接口列表 > 消息 [发送戳一戳（双击头像）](https://api.luckylillia.com/api-440902553.md): 此 API 需要 LLBot 7.11.3 及以上版本
+- OneBot 11 > 接口列表 > 文件 [上传群文件](https://api.luckylillia.com/api-155975222.md): 
+- OneBot 11 > 接口列表 > 文件 [群文件转永久](https://api.luckylillia.com/api-363202170.md): 需要 6.5.0 之后的版本
+- OneBot 11 > 接口列表 > 文件 [删除群文件](https://api.luckylillia.com/api-227237095.md): 
+- OneBot 11 > 接口列表 > 文件 [移动群文件](https://api.luckylillia.com/api-349842098.md): 
+- OneBot 11 > 接口列表 > 文件 [创建群文件文件夹](https://api.luckylillia.com/api-227237287.md): 
+- OneBot 11 > 接口列表 > 文件 [删除群文件文件夹](https://api.luckylillia.com/api-227237610.md): 
+- OneBot 11 > 接口列表 > 文件 [获取群文件系统信息](https://api.luckylillia.com/api-349841637.md): 
+- OneBot 11 > 接口列表 > 文件 [获取群根目录文件列表](https://api.luckylillia.com/api-227237874.md): 
+- OneBot 11 > 接口列表 > 文件 [获取群子目录文件列表](https://api.luckylillia.com/api-340139786.md): 
+- OneBot 11 > 接口列表 > 文件 [重命名群文件文件夹名](https://api.luckylillia.com/api-343325366.md): 
+- OneBot 11 > 接口列表 > 文件 [重命名群文件名](https://api.luckylillia.com/api-427869412.md): 此 API 需要 LLBot 7.10.1 及以上版本
+- OneBot 11 > 接口列表 > 文件 [获取群文件资源链接](https://api.luckylillia.com/api-227239277.md): 
+- OneBot 11 > 接口列表 > 文件 [获取私聊文件资源链接](https://api.luckylillia.com/api-343369371.md): 此 API 需要 LLOneBot 5.9.0 及以上版本
+- OneBot 11 > 接口列表 > 文件 [上传私聊文件](https://api.luckylillia.com/api-227234065.md): 
+- OneBot 11 > 接口列表 > 文件 [上传闪传文件](https://api.luckylillia.com/api-317839399.md): **此 API 需要 LLOneBot 5.3.0 以上版本**
+- OneBot 11 > 接口列表 > 文件 [下载闪传文件](https://api.luckylillia.com/api-317850249.md): **此 API 需要 LLOneBot 5.3.0 以上版本**
+- OneBot 11 > 接口列表 > 文件 [获取闪传文件详情](https://api.luckylillia.com/api-317884181.md): **此 API 需要 LLOneBot 5.3.0 以上版本**
+- OneBot 11 > 接口列表 > 文件 [下载文件到缓存目录](https://api.luckylillia.com/api-156943324.md): 
+- OneBot 11 > 接口列表 > 文件 [重新分享闪传文件](https://api.luckylillia.com/api-427472768.md): **此 API 需要 LLBot 7.11.0 以上版本**
+- OneBot 11 > 接口列表 > 系统 [获取登录号信息](https://api.luckylillia.com/api-147864132.md): 
+- OneBot 11 > 接口列表 > 系统 [获取版本信息](https://api.luckylillia.com/api-230654488.md): 
+- OneBot 11 > 接口列表 > 系统 [bot状态](https://api.luckylillia.com/api-151572557.md): 
+- OneBot 11 > 接口列表 > 系统 [清理缓存](https://api.luckylillia.com/api-153826516.md): 该 API 在 LLOneBot 5.0+ 之后失效
+- OneBot 11 > 接口列表 > 系统 [获取cookies](https://api.luckylillia.com/api-165659467.md): 
+- OneBot 11 > 接口列表 > 系统 [设置在线状态](https://api.luckylillia.com/api-226466249.md): 
+- OneBot 11 > 接口列表 > 系统 [重启](https://api.luckylillia.com/api-234347932.md): 该 API 在 LLOneBot 5.0+ 之后失效
+- OneBot 11 > 接口列表 > 系统 [扫描二维码](https://api.luckylillia.com/api-394346126.md): 需要7.2.0及以上版本
+- OneBot 11 > 接口列表 > 系统 [获取登录号信息 Copy](https://api.luckylillia.com/api-439391979.md): 
+- OneBot 11 > 接口列表 > 其他 [图片 OCR](https://api.luckylillia.com/api-227239205.md): 
+- OneBot 11 > 接口列表 > 其他 [获取图片rkey](https://api.luckylillia.com/api-318107442.md): 
+- OneBot 11 > 接口列表 > 其他 [获取推荐表情](https://api.luckylillia.com/api-324325097.md): 需 5.5.0 版本及以上
+- OneBot 11 > 接口列表 > 其他 [获取收藏表情](https://api.luckylillia.com/api-227239885.md): 
+- OneBot 11 > 接口列表 > 其他 [发送Protobuf数据包](https://api.luckylillia.com/api-359521726.md): 
+- Milky > 系统 API [获取登录信息](https://api.luckylillia.com/api-391181715.md): 
+- Milky > 系统 API [获取协议端信息](https://api.luckylillia.com/api-391181716.md): 
+- Milky > 系统 API [获取用户个人信息](https://api.luckylillia.com/api-391181717.md): 
+- Milky > 系统 API [获取好友列表](https://api.luckylillia.com/api-391181718.md): 
+- Milky > 系统 API [获取好友信息](https://api.luckylillia.com/api-391181719.md): 
+- Milky > 系统 API [获取群列表](https://api.luckylillia.com/api-391181720.md): 
+- Milky > 系统 API [获取群信息](https://api.luckylillia.com/api-391181721.md): 
+- Milky > 系统 API [获取群成员列表](https://api.luckylillia.com/api-391181722.md): 
+- Milky > 系统 API [获取群成员信息](https://api.luckylillia.com/api-391181723.md): 
+- Milky > 系统 API [获取置顶的好友和群列表](https://api.luckylillia.com/api-424371738.md): 
+- Milky > 系统 API [设置好友或群的置顶状态](https://api.luckylillia.com/api-424372306.md): 
+- Milky > 系统 API [设置 QQ 账号头像](https://api.luckylillia.com/api-403555375.md): 
+- Milky > 系统 API [设置 QQ 账号昵称](https://api.luckylillia.com/api-403558081.md): 
+- Milky > 系统 API [设置 QQ 账号个性签名](https://api.luckylillia.com/api-403558784.md): 
+- Milky > 系统 API [获取自定义表情 URL 列表](https://api.luckylillia.com/api-403560065.md): 
+- Milky > 系统 API [获取 Cookies](https://api.luckylillia.com/api-391181724.md): 
+- Milky > 系统 API [获取 CSRF Token](https://api.luckylillia.com/api-391181725.md): 
+- Milky > 消息 API [发送私聊消息](https://api.luckylillia.com/api-391181726.md): 
+- Milky > 消息 API [发送群聊消息](https://api.luckylillia.com/api-391181727.md): 
+- Milky > 消息 API [撤回私聊消息](https://api.luckylillia.com/api-391181728.md): 
+- Milky > 消息 API [撤回群聊消息](https://api.luckylillia.com/api-391181729.md): 
+- Milky > 消息 API [获取消息](https://api.luckylillia.com/api-391181730.md): 
+- Milky > 消息 API [获取历史消息列表](https://api.luckylillia.com/api-391181731.md): 
+- Milky > 消息 API [获取临时资源链接](https://api.luckylillia.com/api-391181732.md): 
+- Milky > 消息 API [获取合并转发消息内容](https://api.luckylillia.com/api-391181733.md): 
+- Milky > 消息 API [标记消息为已读](https://api.luckylillia.com/api-391181734.md): 
+- Milky > 好友 API [发送好友戳一戳](https://api.luckylillia.com/api-391181735.md): 
+- Milky > 好友 API [发送名片点赞](https://api.luckylillia.com/api-391181736.md): 
+- Milky > 好友 API [删除好友](https://api.luckylillia.com/api-403561027.md): 
+- Milky > 好友 API [获取好友请求列表](https://api.luckylillia.com/api-391181737.md): 
+- Milky > 好友 API [同意好友请求](https://api.luckylillia.com/api-391181738.md): 
+- Milky > 好友 API [拒绝好友请求](https://api.luckylillia.com/api-391181739.md): 
+- Milky > 群聊 API [设置群名称](https://api.luckylillia.com/api-391181740.md): 
+- Milky > 群聊 API [设置群头像](https://api.luckylillia.com/api-391181741.md): 
+- Milky > 群聊 API [设置群名片](https://api.luckylillia.com/api-391181742.md): 
+- Milky > 群聊 API [设置群成员专属头衔](https://api.luckylillia.com/api-391181743.md): 
+- Milky > 群聊 API [设置群管理员](https://api.luckylillia.com/api-391181744.md): 
+- Milky > 群聊 API [设置群成员禁言](https://api.luckylillia.com/api-391181745.md): 
+- Milky > 群聊 API [设置群全员禁言](https://api.luckylillia.com/api-391181746.md): 
+- Milky > 群聊 API [踢出群成员](https://api.luckylillia.com/api-391181747.md): 
+- Milky > 群聊 API [获取群公告列表](https://api.luckylillia.com/api-391181748.md): 
+- Milky > 群聊 API [发送群公告](https://api.luckylillia.com/api-391181749.md): 
+- Milky > 群聊 API [删除群公告](https://api.luckylillia.com/api-391181750.md): 
+- Milky > 群聊 API [获取群精华消息列表](https://api.luckylillia.com/api-391181751.md): 
+- Milky > 群聊 API [设置群精华消息](https://api.luckylillia.com/api-391181752.md): 
+- Milky > 群聊 API [退出群](https://api.luckylillia.com/api-391181753.md): 
+- Milky > 群聊 API [发送群消息表情回应](https://api.luckylillia.com/api-391181754.md): 
+- Milky > 群聊 API [发送群戳一戳](https://api.luckylillia.com/api-391181755.md): 
+- Milky > 群聊 API [获取群通知列表](https://api.luckylillia.com/api-391181756.md): 
+- Milky > 群聊 API [同意入群/邀请他人入群请求](https://api.luckylillia.com/api-391181757.md): 
+- Milky > 群聊 API [拒绝入群/邀请他人入群请求](https://api.luckylillia.com/api-391181758.md): 
+- Milky > 群聊 API [同意他人邀请自身入群](https://api.luckylillia.com/api-391181759.md): 
+- Milky > 群聊 API [拒绝他人邀请自身入群](https://api.luckylillia.com/api-391181760.md): 
+- Milky > 文件 API [上传私聊文件](https://api.luckylillia.com/api-391181761.md): 
+- Milky > 文件 API [上传群文件](https://api.luckylillia.com/api-391181762.md): 
+- Milky > 文件 API [获取私聊文件下载链接](https://api.luckylillia.com/api-391181763.md): 
+- Milky > 文件 API [获取群文件下载链接](https://api.luckylillia.com/api-391181764.md): 
+- Milky > 文件 API [获取群文件列表](https://api.luckylillia.com/api-391181765.md): 
+- Milky > 文件 API [移动群文件](https://api.luckylillia.com/api-391181766.md): 
+- Milky > 文件 API [重命名群文件](https://api.luckylillia.com/api-391181767.md): 
+- Milky > 文件 API [删除群文件](https://api.luckylillia.com/api-391181768.md): 
+- Milky > 文件 API [创建群文件夹](https://api.luckylillia.com/api-391181769.md): 
+- Milky > 文件 API [重命名群文件夹](https://api.luckylillia.com/api-391181770.md): 
+- Milky > 文件 API [删除群文件夹](https://api.luckylillia.com/api-391181771.md): 
+
+## Schemas
+- OneBot11 > 上报事件 > 消息段 [MessageSegment](https://api.luckylillia.com/schema-189483990.md): 
+- OneBot11 > 上报事件 > 消息段 [TextSegment](https://api.luckylillia.com/schema-189483991.md): 
+- OneBot11 > 上报事件 > 消息段 [ImageSegment](https://api.luckylillia.com/schema-189483992.md): 
+- OneBot11 > 上报事件 > 消息段 [VideoSegment](https://api.luckylillia.com/schema-189483993.md): 
+- OneBot11 > 上报事件 > 消息段 [RecordSegment](https://api.luckylillia.com/schema-189483994.md): 
+- OneBot11 > 上报事件 > 消息段 [FileSegment](https://api.luckylillia.com/schema-189483995.md): 
+- OneBot11 > 上报事件 > 消息段 [FlashFileSegment](https://api.luckylillia.com/schema-189483996.md): 
+- OneBot11 > 上报事件 > 消息段 [AtSegment](https://api.luckylillia.com/schema-189483997.md): 
+- OneBot11 > 上报事件 > 消息段 [ReplySegment](https://api.luckylillia.com/schema-189483998.md): 
+- OneBot11 > 上报事件 > 消息段 [JsonSegment](https://api.luckylillia.com/schema-189483999.md): 
+- OneBot11 > 上报事件 > 消息段 [XmlSegment](https://api.luckylillia.com/schema-189484000.md): 
+- OneBot11 > 上报事件 > 消息段 [FaceSegment](https://api.luckylillia.com/schema-189484001.md): 
+- OneBot11 > 上报事件 > 消息段 [MfaceSegment](https://api.luckylillia.com/schema-189484002.md): 
+- OneBot11 > 上报事件 > 消息段 [MarkdownSegment](https://api.luckylillia.com/schema-189484003.md): 
+- OneBot11 > 上报事件 > 消息段 [NodeSegment](https://api.luckylillia.com/schema-189484004.md): 
+- OneBot11 > 上报事件 > 消息段 [ForwardSegment](https://api.luckylillia.com/schema-189484005.md): 
+- OneBot11 > 上报事件 > 消息段 [MusicSegment](https://api.luckylillia.com/schema-189484006.md): 
+- OneBot11 > 上报事件 > 消息段 [PokeSegment](https://api.luckylillia.com/schema-189484007.md): 
+- OneBot11 > 上报事件 > 消息段 [DiceSegment](https://api.luckylillia.com/schema-189484008.md): 
+- OneBot11 > 上报事件 > 消息段 [RpsSegment](https://api.luckylillia.com/schema-189484009.md): 
+- OneBot11 > 上报事件 > 消息段 [ContactSegment](https://api.luckylillia.com/schema-189484010.md): 
+- OneBot11 > 上报事件 > 消息段 [ShakeSegment](https://api.luckylillia.com/schema-189484011.md): 
+- OneBot11 > 上报事件 > 消息段 [KeyboardSegment](https://api.luckylillia.com/schema-189484012.md): 
+- OneBot11 > 上报事件 > 消息段 [KeyboardButton](https://api.luckylillia.com/schema-189484013.md): 
+- OneBot11 > 上报事件 > _ [GroupUploadFile](https://api.luckylillia.com/schema-189483973.md): 
+- OneBot11 > 上报事件 > _ [FlashFile](https://api.luckylillia.com/schema-189483985.md): 
+- OneBot11 > 上报事件 > _ [MsgEmojiLike](https://api.luckylillia.com/schema-189483987.md): 
+- OneBot11 > 上报事件 > _ [MessageSender](https://api.luckylillia.com/schema-189483989.md): 
+- OneBot11 > 上报事件 [MessageEvent](https://api.luckylillia.com/schema-189483988.md): 
+- OneBot11 > 上报事件 [PokeEvent](https://api.luckylillia.com/schema-189483980.md): 
+- OneBot11 > 上报事件 [PokeRecallEvent](https://api.luckylillia.com/schema-191565928.md): 
+- OneBot11 > 上报事件 [FriendRecallNoticeEvent](https://api.luckylillia.com/schema-189483971.md): 
+- OneBot11 > 上报事件 [FriendRequestEvent](https://api.luckylillia.com/schema-189483968.md): 
+- OneBot11 > 上报事件 [FriendAddNoticeEvent](https://api.luckylillia.com/schema-189483970.md): 
+- OneBot11 > 上报事件 [ProfileLikeEvent](https://api.luckylillia.com/schema-189483982.md): 
+- OneBot11 > 上报事件 [GroupUploadNoticeEvent](https://api.luckylillia.com/schema-189483972.md): 
+- OneBot11 > 上报事件 [GroupRequestEvent](https://api.luckylillia.com/schema-189483969.md): 
+- OneBot11 > 上报事件 [GroupDismissEvent](https://api.luckylillia.com/schema-197450697.md): 
+- OneBot11 > 上报事件 [GroupIncreaseEvent](https://api.luckylillia.com/schema-189483976.md): 
+- OneBot11 > 上报事件 [GroupDecreaseEvent](https://api.luckylillia.com/schema-189483975.md): 
+- OneBot11 > 上报事件 [GroupTitleEvent](https://api.luckylillia.com/schema-189483981.md): 
+- OneBot11 > 上报事件 [GroupCardEvent](https://api.luckylillia.com/schema-189483979.md): 
+- OneBot11 > 上报事件 [GroupMsgEmojiLikeEvent](https://api.luckylillia.com/schema-189483986.md): 
+- OneBot11 > 上报事件 [GroupRecallNoticeEvent](https://api.luckylillia.com/schema-189483978.md): 
+- OneBot11 > 上报事件 [GroupAdminNoticeEvent](https://api.luckylillia.com/schema-189483974.md): 
+- OneBot11 > 上报事件 [GroupBanEvent](https://api.luckylillia.com/schema-189483977.md): 
+- OneBot11 > 上报事件 [EssenceEvent](https://api.luckylillia.com/schema-189483983.md): 
+- OneBot11 > 上报事件 [FlashFileEvent](https://api.luckylillia.com/schema-189483984.md): 
+- OneBot11 > 上报事件 [HeartbeatEvent](https://api.luckylillia.com/schema-189483966.md): 
+- OneBot11 > 上报事件 [LifeCycleEvent](https://api.luckylillia.com/schema-189483967.md): 
+- OneBot11 > 实体 [FileEntity](https://api.luckylillia.com/schema-195512258.md): 
+- OneBot11 > 实体 [FolderEntity](https://api.luckylillia.com/schema-195512345.md): 
+- Milky > 请求参数|返回 [Api_get_login_info_input](https://api.luckylillia.com/schema-228985060.md): 
+- Milky > 请求参数|返回 [Api_get_impl_info_input](https://api.luckylillia.com/schema-228985062.md): 
+- Milky > 请求参数|返回 [Api_get_user_profile_input](https://api.luckylillia.com/schema-228985064.md): 
+- Milky > 请求参数|返回 [Api_get_login_info_output](https://api.luckylillia.com/schema-228985061.md): 
+- Milky > 请求参数|返回 [Api_get_impl_info_output](https://api.luckylillia.com/schema-228985063.md): 
+- Milky > 请求参数|返回 [Api_get_user_profile_output](https://api.luckylillia.com/schema-228985065.md): 
+- Milky > 请求参数|返回 [Api_get_friend_list_input](https://api.luckylillia.com/schema-228985066.md): 
+- Milky > 请求参数|返回 [Api_get_friend_list_output](https://api.luckylillia.com/schema-228985067.md): 
+- Milky > 请求参数|返回 [Api_get_friend_info_input](https://api.luckylillia.com/schema-228985068.md): 
+- Milky > 请求参数|返回 [Api_get_friend_info_output](https://api.luckylillia.com/schema-228985069.md): 
+- Milky > 请求参数|返回 [Api_get_group_list_input](https://api.luckylillia.com/schema-228985070.md): 
+- Milky > 请求参数|返回 [Api_get_group_list_output](https://api.luckylillia.com/schema-228985071.md): 
+- Milky > 请求参数|返回 [Api_get_group_info_input](https://api.luckylillia.com/schema-228985072.md): 
+- Milky > 请求参数|返回 [Api_get_group_info_output](https://api.luckylillia.com/schema-228985073.md): 
+- Milky > 请求参数|返回 [Api_get_group_member_list_input](https://api.luckylillia.com/schema-228985074.md): 
+- Milky > 请求参数|返回 [Api_get_group_member_list_output](https://api.luckylillia.com/schema-228985075.md): 
+- Milky > 请求参数|返回 [Api_get_group_member_info_input](https://api.luckylillia.com/schema-228985076.md): 
+- Milky > 请求参数|返回 [Api_get_group_member_info_output](https://api.luckylillia.com/schema-228985077.md): 
+- Milky > 请求参数|返回 [Api_get_peer_pins_inputget_peer_pins](https://api.luckylillia.com/schema-251416143.md): 
+- Milky > 请求参数|返回 [Api_get_peer_pins_output](https://api.luckylillia.com/schema-251416268.md): 
+- Milky > 请求参数|返回 [Api_set_peer_pin_input](https://api.luckylillia.com/schema-251416369.md): 
+- Milky > 请求参数|返回 [Api_get_cookies_input](https://api.luckylillia.com/schema-228985078.md): 
+- Milky > 请求参数|返回 [Api_get_cookies_output](https://api.luckylillia.com/schema-228985079.md): 
+- Milky > 请求参数|返回 [Api_get_csrf_token_input](https://api.luckylillia.com/schema-228985080.md): 
+- Milky > 请求参数|返回 [Api_get_csrf_token_output](https://api.luckylillia.com/schema-228985081.md): 
+- Milky > 请求参数|返回 [Api_send_private_message_input](https://api.luckylillia.com/schema-228985082.md): 
+- Milky > 请求参数|返回 [Api_send_private_message_output](https://api.luckylillia.com/schema-228985083.md): 
+- Milky > 请求参数|返回 [Api_send_group_message_input](https://api.luckylillia.com/schema-228985084.md): 
+- Milky > 请求参数|返回 [Api_send_group_message_output](https://api.luckylillia.com/schema-228985085.md): 
+- Milky > 请求参数|返回 [Api_recall_private_message_input](https://api.luckylillia.com/schema-228985086.md): 
+- Milky > 请求参数|返回 [Api_recall_group_message_input](https://api.luckylillia.com/schema-228985087.md): 
+- Milky > 请求参数|返回 [Api_get_message_input](https://api.luckylillia.com/schema-228985088.md): 
+- Milky > 请求参数|返回 [Api_get_message_output](https://api.luckylillia.com/schema-228985089.md): 
+- Milky > 请求参数|返回 [Api_get_history_messages_input](https://api.luckylillia.com/schema-228985090.md): 
+- Milky > 请求参数|返回 [Api_get_history_messages_output](https://api.luckylillia.com/schema-228985091.md): 
+- Milky > 请求参数|返回 [Api_get_resource_temp_url_input](https://api.luckylillia.com/schema-228985092.md): 
+- Milky > 请求参数|返回 [Api_get_resource_temp_url_output](https://api.luckylillia.com/schema-228985093.md): 
+- Milky > 请求参数|返回 [Api_get_forwarded_messages_input](https://api.luckylillia.com/schema-228985094.md): 
+- Milky > 请求参数|返回 [Api_get_forwarded_messages_output](https://api.luckylillia.com/schema-228985095.md): 
+- Milky > 请求参数|返回 [Api_mark_message_as_read_input](https://api.luckylillia.com/schema-228985096.md): 
+- Milky > 请求参数|返回 [Api_send_friend_nudge_input](https://api.luckylillia.com/schema-228985097.md): 
+- Milky > 请求参数|返回 [Api_send_profile_like_input](https://api.luckylillia.com/schema-228985098.md): 
+- Milky > 请求参数|返回 [Api_get_friend_requests_input](https://api.luckylillia.com/schema-228985099.md): 
+- Milky > 请求参数|返回 [Api_get_friend_requests_output](https://api.luckylillia.com/schema-228985100.md): 
+- Milky > 请求参数|返回 [Api_accept_friend_request_input](https://api.luckylillia.com/schema-228985101.md): 
+- Milky > 请求参数|返回 [Api_reject_friend_request_input](https://api.luckylillia.com/schema-228985102.md): 
+- Milky > 请求参数|返回 [Api_set_group_name_input](https://api.luckylillia.com/schema-228985103.md): 
+- Milky > 请求参数|返回 [Api_set_group_avatar_input](https://api.luckylillia.com/schema-228985104.md): 
+- Milky > 请求参数|返回 [Api_set_group_member_card_input](https://api.luckylillia.com/schema-228985105.md): 
+- Milky > 请求参数|返回 [Api_set_group_member_special_title_input](https://api.luckylillia.com/schema-228985106.md): 
+- Milky > 请求参数|返回 [Api_set_group_member_admin_input](https://api.luckylillia.com/schema-228985107.md): 
+- Milky > 请求参数|返回 [Api_set_group_member_mute_input](https://api.luckylillia.com/schema-228985108.md): 
+- Milky > 请求参数|返回 [Api_set_group_whole_mute_input](https://api.luckylillia.com/schema-228985109.md): 
+- Milky > 请求参数|返回 [Api_kick_group_member_input](https://api.luckylillia.com/schema-228985110.md): 
+- Milky > 请求参数|返回 [Api_get_group_announcements_input](https://api.luckylillia.com/schema-228985111.md): 
+- Milky > 请求参数|返回 [Api_get_group_announcements_output](https://api.luckylillia.com/schema-228985112.md): 
+- Milky > 请求参数|返回 [Api_send_group_announcement_input](https://api.luckylillia.com/schema-228985113.md): 
+- Milky > 请求参数|返回 [Api_delete_group_announcement_input](https://api.luckylillia.com/schema-228985114.md): 
+- Milky > 请求参数|返回 [Api_get_group_essence_messages_input](https://api.luckylillia.com/schema-228985115.md): 
+- Milky > 请求参数|返回 [Api_get_group_essence_messages_output](https://api.luckylillia.com/schema-228985116.md): 
+- Milky > 请求参数|返回 [Api_set_group_essence_message_input](https://api.luckylillia.com/schema-228985117.md): 
+- Milky > 请求参数|返回 [Api_quit_group_input](https://api.luckylillia.com/schema-228985118.md): 
+- Milky > 请求参数|返回 [Api_send_group_message_reaction_input](https://api.luckylillia.com/schema-228985119.md): 
+- Milky > 请求参数|返回 [Api_send_group_nudge_input](https://api.luckylillia.com/schema-228985120.md): 
+- Milky > 请求参数|返回 [Api_get_group_notifications_input](https://api.luckylillia.com/schema-228985121.md): 
+- Milky > 请求参数|返回 [Api_get_group_notifications_output](https://api.luckylillia.com/schema-228985122.md): 
+- Milky > 请求参数|返回 [Api_accept_group_request_input](https://api.luckylillia.com/schema-228985123.md): 
+- Milky > 请求参数|返回 [Api_reject_group_request_input](https://api.luckylillia.com/schema-228985124.md): 
+- Milky > 请求参数|返回 [Api_accept_group_invitation_input](https://api.luckylillia.com/schema-228985125.md): 
+- Milky > 请求参数|返回 [Api_reject_group_invitation_input](https://api.luckylillia.com/schema-228985126.md): 
+- Milky > 请求参数|返回 [Api_upload_private_file_input](https://api.luckylillia.com/schema-228985127.md): 
+- Milky > 请求参数|返回 [Api_upload_private_file_output](https://api.luckylillia.com/schema-228985128.md): 
+- Milky > 请求参数|返回 [Api_upload_group_file_input](https://api.luckylillia.com/schema-228985129.md): 
+- Milky > 请求参数|返回 [Api_upload_group_file_output](https://api.luckylillia.com/schema-228985130.md): 
+- Milky > 请求参数|返回 [Api_get_private_file_download_url_input](https://api.luckylillia.com/schema-228985131.md): 
+- Milky > 请求参数|返回 [Api_get_private_file_download_url_output](https://api.luckylillia.com/schema-228985132.md): 
+- Milky > 请求参数|返回 [Api_get_group_file_download_url_input](https://api.luckylillia.com/schema-228985133.md): 
+- Milky > 请求参数|返回 [Api_get_group_file_download_url_output](https://api.luckylillia.com/schema-228985134.md): 
+- Milky > 请求参数|返回 [Api_get_group_files_input](https://api.luckylillia.com/schema-228985135.md): 
+- Milky > 请求参数|返回 [Api_get_group_files_output](https://api.luckylillia.com/schema-228985136.md): 
+- Milky > 请求参数|返回 [Api_move_group_file_input](https://api.luckylillia.com/schema-228985137.md): 
+- Milky > 请求参数|返回 [Api_rename_group_file_input](https://api.luckylillia.com/schema-228985138.md): 
+- Milky > 请求参数|返回 [Api_delete_group_file_input](https://api.luckylillia.com/schema-228985139.md): 
+- Milky > 请求参数|返回 [Api_create_group_folder_input](https://api.luckylillia.com/schema-228985140.md): 
+- Milky > 请求参数|返回 [Api_create_group_folder_output](https://api.luckylillia.com/schema-228985141.md): 
+- Milky > 请求参数|返回 [Api_rename_group_folder_input](https://api.luckylillia.com/schema-228985142.md): 
+- Milky > 请求参数|返回 [Api_delete_group_folder_input](https://api.luckylillia.com/schema-228985143.md): 
+- Milky > 请求参数|返回 [Api_set_avatar_input](https://api.luckylillia.com/schema-237284987.md): 
+- Milky > 请求参数|返回 [Api_set_nickname_input](https://api.luckylillia.com/schema-237287648.md): 
+- Milky > 请求参数|返回 [Api_set_bio_input](https://api.luckylillia.com/schema-237287831.md): 
+- Milky > 请求参数|返回 [Api_get_custom_face_url_list_input](https://api.luckylillia.com/schema-237288277.md): 
+- Milky > 请求参数|返回 [Api_get_custom_face_url_list_output](https://api.luckylillia.com/schema-237288379.md): 
+- Milky > 请求参数|返回 [ApiEmptyObject](https://api.luckylillia.com/schema-228985145.md): 
+- Milky > 请求参数|返回 [Api_delete_friend_input](https://api.luckylillia.com/schema-237288516.md): 
+- Milky > 请求参数|返回 [ApiResponse](https://api.luckylillia.com/schema-228985144.md): 
+- Milky > 实体 [FriendEntity](https://api.luckylillia.com/schema-228985045.md): 
+- Milky > 实体 [FriendCategoryEntity](https://api.luckylillia.com/schema-228985046.md): 
+- Milky > 实体 [GroupEntity](https://api.luckylillia.com/schema-228985047.md): 
+- Milky > 实体 [GroupMemberEntity](https://api.luckylillia.com/schema-228985048.md): 
+- Milky > 实体 [GroupAnnouncementEntity](https://api.luckylillia.com/schema-228985049.md): 
+- Milky > 实体 [GroupFileEntity](https://api.luckylillia.com/schema-228985050.md): 
+- Milky > 实体 [GroupFolderEntity](https://api.luckylillia.com/schema-228985051.md): 
+- Milky > 实体 [FriendRequest](https://api.luckylillia.com/schema-228985052.md): 
+- Milky > 实体 [GroupNotification](https://api.luckylillia.com/schema-228985053.md): 
+- Milky > 事件|消息 [Event](https://api.luckylillia.com/schema-228985044.md): 
+- Milky > 事件|消息 [IncomingMessage](https://api.luckylillia.com/schema-228985054.md): 
+- Milky > 事件|消息 [IncomingForwardedMessage](https://api.luckylillia.com/schema-228985055.md): 
+- Milky > 事件|消息 [GroupEssenceMessage](https://api.luckylillia.com/schema-228985056.md): 
+- Milky > 事件|消息 [IncomingSegment](https://api.luckylillia.com/schema-228985057.md): 
+- Milky > 事件|消息 [OutgoingForwardedMessage](https://api.luckylillia.com/schema-228985058.md): 
+- Milky > 事件|消息 [OutgoingSegment](https://api.luckylillia.com/schema-228985059.md): 
