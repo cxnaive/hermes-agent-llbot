@@ -1,0 +1,5 @@
+name: session-key-supermemory
+version: 1.0.0
+description: "Supermemory scoped by gateway_session_key (per-chat). Subclasses bundled supermemory: inherits all tools/prefetch/capture/ingest, only derives container_tag from the gateway session key instead of {identity}."
+pip_dependencies:
+  - supermemory

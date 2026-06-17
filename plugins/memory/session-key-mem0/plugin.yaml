@@ -1,0 +1,5 @@
+name: session-key-mem0
+version: 1.0.0
+description: "Mem0 scoped by gateway_session_key (per-chat) — same engine as mem0, but isolates memory per chat (group/DM) instead of per user."
+pip_dependencies:
+  - mem0ai
