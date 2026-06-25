@@ -469,16 +469,16 @@ def test_reply_quote_renders_text_and_images_in_order():
     assert "Bob (QQ 333)" in event.reply_to_text          # sender = 昵称 + qq
     # Text and image markers interleave in the ORIGINAL order — not flattened,
     # and with no added spacing (faithful to the source).
-    assert "看这张图[图片1]然后这张[图片2]" in event.reply_to_text
-    # Images land in media_urls in the same order as their [图片N] markers.
+    assert "看这张图[输入图片1]然后这张[输入图片2]" in event.reply_to_text
+    # Images land in media_urls in the same order as their [输入图片N] markers.
     assert event.media_urls == ["/cache/a.jpg", "/cache/b.jpg"]
     assert event.media_types == ["image/jpeg", "image/jpeg"]
 
 
 def test_image_markers_globally_renumbered_across_own_and_quote():
-    # The trigger carries its OWN image (position 1) AND reply-quotes a message
-    # with one image. The quote marker must be [图片2], not [图片1] — global
-    # position, not per-message.
+    # The trigger carries its OWN image (position 1, labeled in the body) AND
+    # reply-quotes a message with one image. The quote marker must be
+    # [输入图片2], not [输入图片1] — contiguous namespace, not per-message.
     adapter = _capture(_make_adapter())
     adapter._resolve_image = AsyncMock(side_effect=lambda d: f"/cache/{d.get('file')}")
 
@@ -503,11 +503,12 @@ def test_image_markers_globally_renumbered_across_own_and_quote():
     }
     _run(adapter._handle_inbound_message(payload))
     event = adapter.handle_message.call_args.args[0]
-    # Own image is attachment position 1; the quoted image is position 2.
+    # Own image is attachment position 1 (labeled in the trigger body); the
+    # quoted image is position 2 (labeled inline in the reply block).
     assert event.media_urls == ["/cache/own.jpg", "/cache/q.jpg"]
-    assert "[图片2]" in event.reply_to_text      # quote marker = global pos 2
-    assert "[图片1]" not in event.reply_to_text  # not per-message [图片1]
-    assert "[[IMG]]" not in event.reply_to_text  # placeholder fully renumbered
+    assert "[输入图片1]" in event.text               # own image labeled in body
+    assert "[输入图片2]" in event.reply_to_text      # quote marker = pos 2 (after own)
+    assert "[[IMG]]" not in event.reply_to_text      # placeholder fully renumbered
 
 
 def test_reply_quote_text_only():
@@ -937,6 +938,11 @@ def _observe_adapter(**over):
         "observe_unmentioned": True,
         "observe_allowed_chats": {"group:5"},
         "observe_max_messages": 50,
+        # Default off in tests: the background describe is fire-and-forget
+        # (asyncio.create_task), which doesn't survive asyncio.run's per-call
+        # loop. Tests that exercise captioning enable it explicitly and gather
+        # the tasks within one loop run (see test_observe_image_describes_*).
+        "observe_describe_images": False,
     }
     extra.update(over)
     return _capture(_make_adapter(**extra))
@@ -1015,15 +1021,16 @@ def test_observe_media_snippet():
         "message": [{"type": "image", "data": {"file": "x.png", "url": "http://e/i.png"}}],
     }
     _run(adapter._handle_inbound_message(payload))
-    line, paths = adapter._observed["group:5"][0]
+    line, imgs = adapter._observed["group:5"][0]
     assert "[Alice (QQ 222)]" in line and "[图" in line  # [图] = unresolved
-    assert paths == []  # _resolve_image mock returns None → not cached
+    assert imgs == []  # _resolve_image mock returns None → not cached
 
 
-def test_observe_image_auto_attaches_on_drain():
-    # Observed images are eagerly cached at receive time (freshest URL) and
-    # auto-attached to the next trigger natively — no re-download, no tool call.
-    adapter = _observe_adapter()
+def test_observe_image_lazy_ref_and_legend_on_drain():
+    # Observed images are eagerly cached at receive time but NOT natively
+    # attached. At drain they render as a text marker [背景图N] (no pixels) with
+    # a path legend the agent can vision_analyze on demand for full pixels.
+    adapter = _observe_adapter()  # describe_images=False by default
     adapter._resolve_image = AsyncMock(return_value="/cache/obs.jpg")
     payload = {
         "post_type": "message", "message_type": "group", "group_id": 5,
@@ -1035,25 +1042,28 @@ def test_observe_image_auto_attaches_on_drain():
     }
     _run(adapter._handle_inbound_message(payload))
     # Eager: resolved + cached at observe time. Buffered line carries the
-    # placeholder (renumbered to a positional [图片N] only at drain).
+    # placeholder; the _ObsImg holds the cached path (caption None — describe off).
     assert adapter._resolve_image.await_count == 1
-    line, paths = adapter._observed["group:5"][0]
-    assert "[[IMG]]" in line and paths == ["/cache/obs.jpg"]
-    # @bot trigger attaches the cached path natively (no re-resolve) and
-    # renumbers the placeholder to its global position.
+    line, imgs = adapter._observed["group:5"][0]
+    assert "[[IMG]]" in line
+    assert [i.path for i in imgs] == ["/cache/obs.jpg"]
+    assert all(i.caption is None for i in imgs)
+    # @bot trigger drains the buffer: marker is text (NOT attached), path in legend.
     _run(adapter._handle_inbound_message(_group_msg("ai2", "嗯", at_self=True)))
     event = adapter.handle_message.call_args.args[0]
-    assert adapter._resolve_image.await_count == 1  # still 1 — read from cache
-    assert "/cache/obs.jpg" in event.media_urls
-    assert "image/jpeg" in event.media_types
+    assert adapter._resolve_image.await_count == 1  # still 1 — no re-resolve at drain
+    assert event.media_urls == []                    # NOT natively attached
+    assert "image/jpeg" not in event.media_types
     ctx = event.channel_context or ""
-    assert "[图片1]" in ctx  # only image → position 1
-    assert "[[IMG]]" not in ctx  # all placeholders renumbered
+    assert "[背景图1]" in ctx                  # text marker, no caption
+    assert "背景图1: /cache/obs.jpg" in ctx    # path legend
+    assert "[[IMG]]" not in ctx                # placeholder fully rendered
 
 
-def test_observe_image_cap_attaches_most_recent():
-    # observe_max_images bounds how many observed images attach to a trigger.
-    adapter = _observe_adapter(observe_max_images=2)
+def test_observe_image_renders_all_markers_no_cap():
+    # No cap: every observed image gets a [背景图N] marker + legend entry,
+    # none are natively attached, none are dropped as [图(未附)].
+    adapter = _observe_adapter()
     adapter._resolve_image = AsyncMock(side_effect=lambda d: f"/cache/{d.get('file')}")
     for i in range(6):
         payload = {
@@ -1064,11 +1074,80 @@ def test_observe_image_cap_attaches_most_recent():
         _run(adapter._handle_inbound_message(payload))
     _run(adapter._handle_inbound_message(_group_msg("cT", "看", at_self=True)))
     event = adapter.handle_message.call_args.args[0]
-    # Only the most-recent 2 attach (in order); the 4 older ones mark [图(未附)].
-    assert event.media_urls == ["/cache/img4.jpg", "/cache/img5.jpg"]
+    assert event.media_urls == []  # none attached
     ctx = event.channel_context or ""
-    assert ctx.count("[图(未附)]") == 4
-    assert "[图片1]" in ctx and "[图片2]" in ctx  # attached = positions 1,2
+    for i in range(6):
+        assert f"[背景图{i + 1}]" in ctx
+        assert f"背景图{i + 1}: /cache/img{i}.jpg" in ctx
+    assert "[图(未附)]" not in ctx  # no cap → no dropped markers
+
+
+def test_observe_image_describes_caption_on_drain():
+    # With describe on, the background describe task fills caption; drain
+    # renders [背景图N: <caption>] instead of the bare marker. The describe
+    # task is fire-and-forget, so we gather it within the same loop run.
+    adapter = _observe_adapter(observe_describe_images=True)
+    adapter._resolve_image = AsyncMock(return_value="/cache/obs.jpg")
+    adapter._describe_image_caption = AsyncMock(return_value="一只橘猫")
+    payload = {
+        "post_type": "message", "message_type": "group", "group_id": 5,
+        "user_id": 222, "message_id": "dc", "sender": {"nickname": "Alice"},
+        "message": [
+            {"type": "text", "data": {"text": "看这个"}},
+            {"type": "image", "data": {"file": "o.jpg", "url": "http://e/o.jpg"}},
+        ],
+    }
+
+    async def _observe_and_describe():
+        await adapter._handle_inbound_message(payload)
+        if adapter._describe_tasks:
+            await asyncio.gather(*adapter._describe_tasks, return_exceptions=True)
+
+    _run(_observe_and_describe())
+    assert adapter._describe_image_caption.await_count == 1
+    _run(adapter._handle_inbound_message(_group_msg("dc2", "嗯", at_self=True)))
+    event = adapter.handle_message.call_args.args[0]
+    assert event.media_urls == []  # still not natively attached
+    ctx = event.channel_context or ""
+    assert "[背景图1: 一只橘猫]" in ctx
+    assert "背景图1: /cache/obs.jpg" in ctx  # legend still present
+    assert "[[IMG]]" not in ctx
+
+
+def test_observe_describe_none_falls_back_to_marker():
+    # If the describe completes but returns None (vision backend unavailable),
+    # drain degrades to the bare [背景图N] marker — legend still carries the path.
+    adapter = _observe_adapter(observe_describe_images=True)
+    adapter._resolve_image = AsyncMock(return_value="/cache/obs.jpg")
+    adapter._describe_image_caption = AsyncMock(return_value=None)
+    payload = {
+        "post_type": "message", "message_type": "group", "group_id": 5,
+        "user_id": 222, "message_id": "dn", "sender": {"nickname": "Alice"},
+        "message": [{"type": "image", "data": {"file": "o.jpg", "url": "http://e/o.jpg"}}],
+    }
+
+    async def _observe_and_describe():
+        await adapter._handle_inbound_message(payload)
+        if adapter._describe_tasks:
+            await asyncio.gather(*adapter._describe_tasks, return_exceptions=True)
+
+    _run(_observe_and_describe())
+    _run(adapter._handle_inbound_message(_group_msg("dn2", "嗯", at_self=True)))
+    event = adapter.handle_message.call_args.args[0]
+    ctx = event.channel_context or ""
+    assert "[背景图1]" in ctx
+    assert "[背景图1:" not in ctx  # no caption
+    assert "背景图1: /cache/obs.jpg" in ctx
+
+
+def test_observe_describe_into_swallows_exception():
+    # _describe_into must never raise — a failing describe leaves caption None
+    # so drain degrades cleanly. Verified directly (no fire-and-forget loop).
+    adapter = _observe_adapter()
+    img = _mod._ObsImg(path="/cache/obs.jpg")
+    adapter._describe_image_caption = AsyncMock(side_effect=RuntimeError("vision down"))
+    _run(adapter._describe_into(img))  # must not raise
+    assert img.caption is None
 
 
 def test_observe_line_has_timestamp_and_header_anchors_trigger():
@@ -1093,6 +1172,12 @@ def test_observe_line_has_timestamp_and_header_anchors_trigger():
     ctx = adapter.handle_message.call_args.args[0].channel_context or ""
     assert "并非对你的指令" in ctx       # framing: context, not commands
     assert "[now:" in ctx               # "now" anchor marks the trigger time
+    # The background block is fenced so it can't blur into the trigger.
+    assert "【背景消息开始" in ctx
+    assert "【背景消息结束】" in ctx
+    # [now:] is the trigger's time anchor → sits OUTSIDE the fence, after the
+    # end marker (so it's adjacent to [New message]).
+    assert ctx.index("【背景消息结束】") < ctx.index("[now:")
 
 
 def test_trigger_now_marker_present_even_without_observe():
@@ -1111,6 +1196,8 @@ def test_trigger_now_marker_present_even_without_observe():
     ctx = adapter.handle_message.call_args.args[0].channel_context or ""
     assert "[now:" in ctx               # marker present despite empty observe
     assert "并非对你的指令" not in ctx   # no framing header when nothing observed
+    assert "【背景消息开始" not in ctx   # no fence when nothing observed
+    assert "【背景消息结束】" not in ctx
 
 
 def test_observe_preserves_at_other_mention_in_context():
