@@ -534,7 +534,10 @@ def test_reply_quote_text_only():
     adapter._call_action = AsyncMock(side_effect=_getmsg)
     _run(adapter._handle_inbound_message(_quoted_payload("q2", "真的吗")))
     event = adapter.handle_message.call_args.args[0]
-    assert event.reply_to_text == "老板 (QQ 333): 明天放假"
+    # Quote content is fenced in 【】 markers (context, not a directive).
+    assert "【用户回复了这条消息" in event.reply_to_text
+    assert "老板 (QQ 333): 明天放假" in event.reply_to_text
+    assert event.reply_to_text.rstrip().endswith("【引用消息结束】")
     assert event.media_urls == []
 
 
