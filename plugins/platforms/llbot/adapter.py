@@ -297,6 +297,15 @@ class LLBotAdapter(BasePlatformAdapter):
         # task refs so the GC doesn't reap them mid-flight.
         self._describe_sem = asyncio.Semaphore(3)
         self._describe_tasks: Set[asyncio.Task] = set()
+        # Operational status (warn/info/progress — compression failures, etc.)
+        # that the gateway would otherwise post into the originating chat is
+        # redirected here via send_or_update_status. Accepts ``private:<qq>``
+        # or ``group:<id>``. Unset → suppress (group stays clean; warnings
+        # still hit the gateway logs).
+        self.status_channel: str = (
+            os.getenv("LLBOT_STATUS_CHANNEL", "").strip()
+            or str(extra.get("status_channel", "") or "").strip()
+        )
         # Docker / shared-volume media path mapping. When llbot runs in a
         # container and Hermes on the host, outbound files are staged into the
         # shared host dir and referenced by the container dir; inbound paths
@@ -643,12 +652,17 @@ class LLBotAdapter(BasePlatformAdapter):
         # without this prefix the agent couldn't tell a @bot ping from an
         # @everyone — both pass the group gate. @others stay inline in the
         # text (e.g. "@张三"), so the agent already sees who else was tagged.
+        # Mentioner label with QQ number, consistent with observe lines and
+        # quoted messages (``昵称 (QQ <id>)``) so the agent knows who triggered
+        # it by QQ, not just nickname. (The gateway also prefixes the speaker
+        # name for shared group sessions; the QQ here is the part that carries.)
+        speaker = f"{user_name} (QQ {user_id})" if user_id else user_name
         if parsed.mentioned_all:
-            mention_note = f"[{user_name} @全体成员]"
+            mention_note = f"[{speaker} @全体成员]"
         elif parsed.mentioned_self:
-            mention_note = f"[{user_name} @你]"
+            mention_note = f"[{speaker} @你]"
         elif _wake_match:
-            mention_note = f"[{user_name} 提到了你]"
+            mention_note = f"[{speaker} 提到了你]"
         else:
             mention_note = ""
 
@@ -1209,6 +1223,52 @@ class LLBotAdapter(BasePlatformAdapter):
 
     # ── Required BasePlatformAdapter interface ────────────────────────────
 
+    async def send_or_update_status(
+        self,
+        chat_id: str,
+        status_key: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Intercept operational status the gateway would otherwise post into
+        the originating chat.
+
+        The gateway routes status-callback-driven messages (``warn`` /
+        ``info`` / progress — e.g. ``⚠ Compression summary failed …``) through
+        this method when the adapter implements it; real agent replies go
+        through :meth:`send`, so this never touches normal conversation. We
+        redirect these to ``status_channel`` (configurable, accepts
+        ``private:<qq>`` or ``group:<id>``) prefixed with the source chat so
+        operational noise doesn't clutter group chats. If ``status_channel``
+        is unset or malformed, suppress — the originating chat stays clean and
+        the warning still lands in the gateway logs.
+
+        Returns success with an empty ``message_id`` so the gateway doesn't
+        track the routed message for post-turn cleanup (which deletes
+        transient progress bubbles) — a persisted operational warning should
+        not be auto-deleted from the status channel.
+        """
+        text = str(content or "").strip()
+        if not text:
+            return SendResult(success=True, message_id="", raw_response={"status": "empty"})
+        if not self.status_channel:
+            return SendResult(success=True, message_id="", raw_response={"status": "suppressed"})
+        try:
+            onebot.parse_chat_id(self.status_channel)
+        except ValueError:
+            logger.warning(
+                "[LLBot] status_channel %r is malformed (want private:<qq> or group:<id>) — suppressing status",
+                self.status_channel,
+            )
+            return SendResult(success=True, message_id="", raw_response={"status": "bad_status_channel"})
+        try:
+            await self.send(
+                self.status_channel, f"[运维告警·{chat_id}] {text}", metadata=metadata
+            )
+        except Exception as exc:
+            logger.warning("[LLBot] status_channel send failed: %s", exc)
+        return SendResult(success=True, message_id="", raw_response={"status": "routed"})
+
     async def send(
         self,
         chat_id: str,
@@ -1670,6 +1730,9 @@ def _env_enablement() -> Optional[dict]:
     wake = os.getenv("LLBOT_WAKE_WORDS", "").strip()
     if wake:
         seed["wake_words"] = wake
+    status_channel = os.getenv("LLBOT_STATUS_CHANNEL", "").strip()
+    if status_channel:
+        seed["status_channel"] = status_channel
     fwd_limit = os.getenv("LLBOT_FORWARD_LIMIT", "").strip()
     if fwd_limit:
         try:
