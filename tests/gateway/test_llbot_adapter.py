@@ -115,6 +115,15 @@ def test_adapter_reads_extra_when_env_absent():
     assert adapter.require_mention is False
 
 
+def test_connect_accepts_is_reconnect_kwarg():
+    # Upstream's base connect(*, is_reconnect=False); the gateway forwards
+    # is_reconnect on reconnects. The override must accept it or the gateway
+    # fails with "unexpected keyword argument 'is_reconnect'".
+    import inspect
+    sig = inspect.signature(LLBotAdapter.connect)
+    assert "is_reconnect" in sig.parameters
+
+
 # ── chat_id encoding ────────────────────────────────────────────────────
 
 
