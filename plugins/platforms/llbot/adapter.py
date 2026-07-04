@@ -380,7 +380,7 @@ class LLBotAdapter(BasePlatformAdapter):
 
     # ── Connection lifecycle ──────────────────────────────────────────────
 
-    async def connect(self) -> bool:
+    async def connect(self, *, is_reconnect: bool = False) -> bool:
         if not _AIOHTTP_AVAILABLE:
             self._set_fatal_error(
                 "llbot_missing_dependency",
@@ -408,7 +408,10 @@ class LLBotAdapter(BasePlatformAdapter):
             await self._open_ws()
             self._listen_task = asyncio.create_task(self._listen_loop())
             self._mark_connected()
-            logger.info("[LLBot] connected to %s", self.ws_url)
+            logger.info(
+                "[LLBot] %s to %s",
+                "reconnected" if is_reconnect else "connected", self.ws_url,
+            )
             return True
         except Exception as exc:
             self._set_fatal_error("llbot_connect_error", str(exc), retryable=True)
