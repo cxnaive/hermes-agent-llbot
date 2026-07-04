@@ -474,11 +474,16 @@ def test_reply_quote_renders_text_and_images_in_order():
     _run(adapter._handle_inbound_message(_quoted_payload("q1", "这啥")))
     event = adapter.handle_message.call_args.args[0]
     assert event.reply_to_message_id == "999"
-    assert event.reply_to_text is not None
-    assert "Bob (QQ 333)" in event.reply_to_text          # sender = 昵称 + qq
+    # Quote is now a 【】 fence in channel_context (reply_to_text unset so the
+    # gateway doesn't double-wrap it as [Replying to:]).
+    assert event.reply_to_text is None
+    assert event.channel_context is not None
+    assert "【用户回复了这条消息" in event.channel_context
+    assert "Bob (QQ 333)" in event.channel_context          # sender = 昵称 + qq
     # Text and image markers interleave in the ORIGINAL order — not flattened,
     # and with no added spacing (faithful to the source).
-    assert "看这张图[输入图片1]然后这张[输入图片2]" in event.reply_to_text
+    assert "看这张图[输入图片1]然后这张[输入图片2]" in event.channel_context
+    assert event.channel_context.rstrip().endswith("【引用消息结束】")
     # Images land in media_urls in the same order as their [输入图片N] markers.
     assert event.media_urls == ["/cache/a.jpg", "/cache/b.jpg"]
     assert event.media_types == ["image/jpeg", "image/jpeg"]
@@ -513,11 +518,12 @@ def test_image_markers_globally_renumbered_across_own_and_quote():
     _run(adapter._handle_inbound_message(payload))
     event = adapter.handle_message.call_args.args[0]
     # Own image is attachment position 1 (labeled in the trigger body); the
-    # quoted image is position 2 (labeled inline in the reply block).
+    # quoted image is position 2 (labeled in the 【】 fence in channel_context).
     assert event.media_urls == ["/cache/own.jpg", "/cache/q.jpg"]
     assert "[输入图片1]" in event.text               # own image labeled in body
-    assert "[输入图片2]" in event.reply_to_text      # quote marker = pos 2 (after own)
-    assert "[[IMG]]" not in event.reply_to_text      # placeholder fully renumbered
+    ctx = event.channel_context or ""
+    assert "[输入图片2]" in ctx                       # quote marker = pos 2 (after own)
+    assert "[[IMG]]" not in ctx                       # placeholder fully renumbered
 
 
 def test_reply_quote_text_only():
@@ -534,10 +540,12 @@ def test_reply_quote_text_only():
     adapter._call_action = AsyncMock(side_effect=_getmsg)
     _run(adapter._handle_inbound_message(_quoted_payload("q2", "真的吗")))
     event = adapter.handle_message.call_args.args[0]
-    # Quote content is fenced in 【】 markers (context, not a directive).
-    assert "【用户回复了这条消息" in event.reply_to_text
-    assert "老板 (QQ 333): 明天放假" in event.reply_to_text
-    assert event.reply_to_text.rstrip().endswith("【引用消息结束】")
+    # Quote content is fenced in 【】 markers in channel_context (not a directive).
+    ctx = event.channel_context or ""
+    assert "【用户回复了这条消息" in ctx
+    assert "老板 (QQ 333): 明天放假" in ctx
+    assert ctx.rstrip().endswith("【引用消息结束】")
+    assert event.reply_to_text is None
     assert event.media_urls == []
 
 
@@ -559,9 +567,11 @@ def test_reply_quote_at_includes_qq():
     adapter._call_action = AsyncMock(side_effect=_getmsg)
     _run(adapter._handle_inbound_message(_quoted_payload("q5", "嗯")))
     event = adapter.handle_message.call_args.args[0]
-    # @-ed person carries their qq so the agent can @ them back.
-    assert "Bob (QQ 333)" in event.reply_to_text
-    assert "@张三(QQ 88888888)" in event.reply_to_text
+    # @-ed person carries their qq so the agent can @ them back. The quote is
+    # fenced in channel_context now.
+    ctx = event.channel_context or ""
+    assert "Bob (QQ 333)" in ctx
+    assert "@张三(QQ 88888888)" in ctx
 
 
 def test_reply_quote_get_msg_failure_is_graceful():
@@ -570,7 +580,9 @@ def test_reply_quote_get_msg_failure_is_graceful():
     _run(adapter._handle_inbound_message(_quoted_payload("q3", "看看")))
     event = adapter.handle_message.call_args.args[0]
     assert event.reply_to_message_id == "999"   # id still recorded
-    assert event.reply_to_text is None          # but no content surfaced
+    assert event.reply_to_text is None          # never set (quote lives in channel_context)
+    # get_msg failed → no quote fence surfaced.
+    assert "用户回复了这条消息" not in (event.channel_context or "")
     assert event.media_urls == []
 
 
