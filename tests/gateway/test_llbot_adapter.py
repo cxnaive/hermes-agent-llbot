@@ -230,7 +230,7 @@ def test_group_message_with_mention_self_passes():
     adapter = _capture(_make_adapter())
     _run(adapter._handle_inbound_message(_group_msg("m2", "hi", at_self=True)))
     event = adapter.handle_message.call_args.args[0]
-    assert event.text == "[Alice @你] hi"
+    assert event.text == "[Alice (QQ 222) @你] hi"
     assert event.source.chat_id == "group:5"
     assert event.source.chat_type == "group"
     assert event.source.user_id == "222"
@@ -250,7 +250,7 @@ def test_group_message_mention_all_marked_in_text():
     adapter = _capture(_make_adapter())
     _run(adapter._handle_inbound_message(_group_msg("m_all", "大家注意", at_all=True)))
     event = adapter.handle_message.call_args.args[0]
-    assert event.text == "[Alice @全体成员] 大家注意"
+    assert event.text == "[Alice (QQ 222) @全体成员] 大家注意"
 
 
 def test_group_message_mention_other_kept_inline():
@@ -261,7 +261,7 @@ def test_group_message_mention_other_kept_inline():
         _group_msg("m_o", "你看下", at_self=True, at_other=999)
     ))
     event = adapter.handle_message.call_args.args[0]
-    assert event.text.startswith("[Alice @你]")
+    assert event.text.startswith("[Alice (QQ 222) @你]")
     assert "@用户999" in event.text
 
 
@@ -646,7 +646,7 @@ def test_wake_word_default_triggers_without_mention():
     _run(adapter._handle_inbound_message(_group_msg("ww1", "Arona 帮我看看", at_self=False)))
     adapter.handle_message.assert_awaited_once()
     event = adapter.handle_message.call_args.args[0]
-    assert "[Alice 提到了你]" in event.text
+    assert "[Alice (QQ 222) 提到了你]" in event.text
 
 
 def test_wake_word_chinese_default_triggers():
@@ -654,7 +654,7 @@ def test_wake_word_chinese_default_triggers():
     _run(adapter._handle_inbound_message(_group_msg("ww2", "阿罗娜 你在吗", at_self=False)))
     adapter.handle_message.assert_awaited_once()
     event = adapter.handle_message.call_args.args[0]
-    assert "[Alice 提到了你]" in event.text
+    assert "[Alice (QQ 222) 提到了你]" in event.text
 
 
 def test_wake_word_case_insensitive():
@@ -675,7 +675,7 @@ def test_wake_word_custom_regex():
     _run(adapter._handle_inbound_message(_group_msg("ww5", "求助啊", at_self=False)))
     adapter.handle_message.assert_awaited_once()
     event = adapter.handle_message.call_args.args[0]
-    assert "[Alice 提到了你]" in event.text
+    assert "[Alice (QQ 222) 提到了你]" in event.text
     # Non-matching message is dropped.
     _run(adapter._handle_inbound_message(_group_msg("ww6", "随便聊聊", at_self=False)))
     assert adapter.handle_message.await_count == 1
@@ -700,6 +700,47 @@ def test_send_private_routes_send_private_msg():
     action, params = adapter._call_action.call_args.args
     assert action == "send_private_msg"
     assert params["user_id"] == 9
+
+
+def test_status_routed_to_status_channel_when_set():
+    # Operational status (warn/info/progress) is redirected to status_channel
+    # (here a private DM) instead of the originating group, prefixed with the
+    # source chat. Real replies are unaffected (they go through send()).
+    adapter = _connected(_make_adapter(status_channel="private:3883393282"))
+    res = _run(adapter.send_or_update_status(
+        "group:227488202", "warn", "⚠ Compression summary failed: empty"
+    ))
+    assert res.success and res.message_id == ""  # no msg_id → not auto-cleaned
+    action, params = adapter._call_action.call_args.args
+    assert action == "send_private_msg"
+    assert params["user_id"] == 3883393282
+    text = params["message"][0]["data"]["text"]
+    assert "[运维告警·group:227488202]" in text
+    assert "⚠ Compression summary failed: empty" in text
+
+
+def test_status_routed_to_group_channel_form():
+    # status_channel accepts the group:<id> form too.
+    adapter = _connected(_make_adapter(status_channel="group:999"))
+    _run(adapter.send_or_update_status("private:5", "warn", "boom"))
+    action, params = adapter._call_action.call_args.args
+    assert action == "send_group_msg"
+    assert params["group_id"] == 999
+
+
+def test_status_suppressed_when_no_status_channel():
+    # Unset status_channel → suppress (no send to the originating chat).
+    adapter = _connected(_make_adapter())  # no status_channel
+    res = _run(adapter.send_or_update_status("group:5", "warn", "oops"))
+    assert res.success and res.message_id == ""
+    adapter._call_action.assert_not_called()
+
+
+def test_status_suppressed_when_status_channel_malformed():
+    adapter = _connected(_make_adapter(status_channel="nonsense"))
+    res = _run(adapter.send_or_update_status("group:5", "warn", "oops"))
+    assert res.success and res.message_id == ""
+    adapter._call_action.assert_not_called()
 
 
 def test_send_reply_segment_is_first():
