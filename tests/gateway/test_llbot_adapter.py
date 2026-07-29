@@ -549,6 +549,103 @@ def test_reply_quote_text_only():
     assert event.media_urls == []
 
 
+def test_reply_quote_file_is_downloaded_with_path():
+    # The quote carries a file. Quoted segments come from a FRESH get_msg at
+    # trigger time, so the file URL is live — download it and surface the
+    # cached path inline so the agent can read the file the user replied to.
+    adapter = _capture(_make_adapter())
+    adapter._resolve_file = AsyncMock(return_value="/cache/documents/doc_x_报告.pdf")
+
+    def _getmsg(action, params, **kw):
+        if action == "get_msg":
+            return {"status": "ok", "retcode": 0, "data": {
+                "user_id": 333, "sender": {"nickname": "Bob"},
+                "message": [
+                    {"type": "text", "data": {"text": "看下这个"}},
+                    {"type": "file", "data": {"file": "abc.hash", "name": "报告.pdf", "url": "http://e/f"}},
+                ],
+            }}
+        return {"status": "ok", "retcode": 0, "data": {}}
+
+    adapter._call_action = AsyncMock(side_effect=_getmsg)
+    _run(adapter._handle_inbound_message(_quoted_payload("qf", "帮我总结")))
+    event = adapter.handle_message.call_args.args[0]
+    ctx = event.channel_context or ""
+    # _resolve_file was called with the quoted file segment (downloaded now).
+    adapter._resolve_file.assert_awaited_once()
+    seg = adapter._resolve_file.await_args.args[0]
+    assert seg.get("name") == "报告.pdf"
+    # Marker carries the cached path inline in the quote fence.
+    assert "看下这个[文件:报告.pdf → /cache/documents/doc_x_报告.pdf]" in ctx
+    # A quoted FILE is referenced by path, not attached as an image.
+    assert event.media_urls == []
+
+
+def test_reply_quote_file_download_failure_falls_back_to_name():
+    # If the quoted file can't be resolved, degrade to the bare name (no crash).
+    adapter = _capture(_make_adapter())
+    adapter._resolve_file = AsyncMock(return_value=None)
+
+    def _getmsg(action, params, **kw):
+        if action == "get_msg":
+            return {"status": "ok", "retcode": 0, "data": {
+                "user_id": 333, "sender": {"nickname": "Bob"},
+                "message": [{"type": "file", "data": {"file": "x.hash", "name": "报告.pdf"}}],
+            }}
+        return {"status": "ok", "retcode": 0, "data": {}}
+
+    adapter._call_action = AsyncMock(side_effect=_getmsg)
+    _run(adapter._handle_inbound_message(_quoted_payload("qf2", "看")))
+    ctx = adapter.handle_message.call_args.args[0].channel_context or ""
+    assert "[文件:报告.pdf]" in ctx
+    assert "→" not in ctx
+
+
+def test_reply_quote_record_is_downloaded_with_path():
+    # Same treatment for a quoted VOICE segment: fresh URL → download → path.
+    adapter = _capture(_make_adapter())
+    adapter._resolve_record = AsyncMock(return_value="/cache/audio/rec_abc.ogg")
+
+    def _getmsg(action, params, **kw):
+        if action == "get_msg":
+            return {"status": "ok", "retcode": 0, "data": {
+                "user_id": 333, "sender": {"nickname": "Bob"},
+                "message": [
+                    {"type": "text", "data": {"text": "听"}},
+                    {"type": "record", "data": {"file": "r.hash", "url": "http://e/r"}},
+                ],
+            }}
+        return {"status": "ok", "retcode": 0, "data": {}}
+
+    adapter._call_action = AsyncMock(side_effect=_getmsg)
+    _run(adapter._handle_inbound_message(_quoted_payload("qr", "说了啥")))
+    ctx = adapter.handle_message.call_args.args[0].channel_context or ""
+    adapter._resolve_record.assert_awaited_once()
+    assert "听[语音: <音频已缓存，可用 read_file 读取> /cache/audio/rec_abc.ogg]" in ctx
+    # A quoted record is referenced by path, not attached as audio.
+    assert adapter.handle_message.call_args.args[0].media_urls == []
+
+
+def test_observe_file_is_name_only_no_download():
+    # Background files are NOT downloaded (can be large) — name only, no path.
+    adapter = _capture(_make_adapter(observe_unmentioned=True, observe_allowed_chats=["5"]))
+    adapter._resolve_image = AsyncMock(return_value=None)
+    payload = {
+        "post_type": "message", "message_type": "group", "group_id": 5,
+        "user_id": 222, "message_id": "ob1", "sender": {"nickname": "Alice"},
+        "message": [
+            {"type": "text", "data": {"text": "发个文件"}},
+            {"type": "file", "data": {"file": "big.hash", "name": "大文件.zip", "url": "http://e/big"}},
+        ],
+    }
+    _run(adapter._observe("group:5", "Alice", "222", payload["message"], 1234567890))
+    line, imgs = adapter._observed["group:5"][0]
+    # Name rendered, but the file was never resolved/downloaded.
+    assert "[文件:大文件.zip]" in line
+    assert "→" not in line
+    adapter._resolve_file.assert_not_awaited()
+
+
 def test_reply_quote_at_includes_qq():
     adapter = _capture(_make_adapter())
 
