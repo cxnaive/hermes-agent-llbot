@@ -699,8 +699,16 @@ class LLBotAdapter(BasePlatformAdapter):
             if path:
                 media_urls.append(path)
                 media_types.append("audio/ogg")
+        # Group id for group-file downloads (get_group_file_url needs it; the
+        # generic get_file rejects group files). None for DMs.
+        gid: Optional[int] = None
+        if chat_type == "group":
+            try:
+                gid = onebot.parse_chat_id(chat_id)[1]
+            except ValueError:
+                gid = None
         for fdata in parsed.files:
-            path = await self._resolve_file(fdata)
+            path = await self._resolve_file(fdata, group_id=gid)
             if path:
                 fname = fdata.get("name") or fdata.get("file") or "file"
                 text_parts.append(f"[file: {fname} ({path})]")
@@ -723,7 +731,7 @@ class LLBotAdapter(BasePlatformAdapter):
                 # get_msg at trigger time, so file/record URLs are live —
                 # download them now and surface their cached paths inline so
                 # the agent can read the file / voice the user replied to.
-                tokens = await self._render_ordered(q_message, resolve_files=True)
+                tokens = await self._render_ordered(q_message, resolve_files=True, group_id=gid)
                 for _chunk, q_path in tokens:
                     if q_path:
                         media_urls.append(q_path)
@@ -1471,7 +1479,7 @@ class LLBotAdapter(BasePlatformAdapter):
         return data.get("message"), sender_display
 
     async def _render_ordered(
-        self, message: Any, *, resolve_files: bool = False
+        self, message: Any, *, resolve_files: bool = False, group_id: Optional[int] = None
     ) -> List[Tuple[str, Optional[str]]]:
         """Render a message's segments in original order, resolving images.
 
@@ -1491,7 +1499,10 @@ class LLBotAdapter(BasePlatformAdapter):
         marker carries the cached path (``[文件:name → <path>]``) so the agent
         can read it. With ``resolve_files=False`` (observe) it's only the
         name (``[文件:name]``, no download): background files can be large and
-        aren't worth caching speculatively. Shared by quote rendering (caller
+        aren't worth caching speculatively. ``group_id`` is forwarded to
+        ``_resolve_file`` so GROUP files (which ``get_file`` rejects) download
+        via ``get_group_file_url``; pass the numeric group id for group chats,
+        ``None`` for DMs. Shared by quote rendering (caller
         appends each path as a media attachment) and observe (caller embeds
         the placeholder inline, rendered at drain) so text/media interleaving
         stays faithful.
@@ -1518,7 +1529,7 @@ class LLBotAdapter(BasePlatformAdapter):
             elif kind == "file":
                 fname = sdata.get("name") or sdata.get("file") or "文件"
                 if resolve_files:
-                    fpath = await self._resolve_file(sdata)
+                    fpath = await self._resolve_file(sdata, group_id=group_id)
                     if fpath:
                         tokens.append((f"[文件:{fname} → {fpath}]", None))
                     else:
@@ -1570,9 +1581,32 @@ class LLBotAdapter(BasePlatformAdapter):
             host_path, self.shared_media_host_dir, self.shared_media_container_dir
         )
 
-    async def _resolve_file(self, segment_data: dict) -> Optional[str]:
+    async def _resolve_file(self, segment_data: dict, group_id: Optional[int] = None) -> Optional[str]:
         """Resolve an inbound file segment to a cached local path."""
         ref = onebot.best_file_ref(segment_data)
+        # 0. GROUP file: a QQ group-file segment is elementType 3, which
+        #    LLOneBot's ``get_file`` rejects ("不支持的文件类型: 3"). Use the
+        #    group-file-specific ``get_group_file_url`` to get a real download
+        #    URL from its ``file_id``, then download. Fall through to the
+        #    generic path on any failure (or for DM files, which get_file handles).
+        if group_id is not None:
+            file_id = str(segment_data.get("file_id") or "").strip()
+            if file_id:
+                try:
+                    resp = await self._call_action(
+                        "get_group_file_url",
+                        {"group_id": group_id, "file_id": file_id},
+                        timeout=20.0,
+                    )
+                    if onebot.response_ok(resp):
+                        url = (resp.get("data") or {}).get("url")
+                        if url:
+                            data = await self._download_bytes(url)
+                            return cache_document_from_bytes(
+                                data, segment_data.get("name") or segment_data.get("file") or "file"
+                            )
+                except Exception as exc:
+                    logger.debug("[LLBot] get_group_file_url failed: %s", exc)
         # 1. Direct http(s) URL — download directly.
         if ref and ref.startswith(("http://", "https://")):
             try:

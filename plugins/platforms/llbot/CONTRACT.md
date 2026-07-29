@@ -38,6 +38,15 @@
   文件/语音**不原生附着**（不进 `media_urls`），只给路径；下载失败回退为裸 `[文件:name]`/`[语音]`。
   背景消息里的文件**不下载**（可能很大），仅 `[文件:name]`。
 
+### 文件下载（own 触发 + 引用，群聊）
+- **群文件走 `get_group_file_url`**：QQ 群文件是 OneBot `elementType 3`，LLOneBot 的 `get_file`
+  **拒绝**（`retcode 1200 · 不支持的文件类型: 3`）。因此 `_resolve_file(seg, group_id=gid)` 在群聊时
+  **先调 `get_group_file_url(group_id, file_id)`** 拿真实下载 URL → 下载 → `cache_document_from_bytes`。
+  失败落回通用路径（URL→base64→get_file）；**私聊文件**仍走 `get_file`（不传 group_id）。
+  `gid` 由 `chat_type=="group"` 时 `onebot.parse_chat_id(chat_id)[1]` 得到，线程化到 own 触发与引用两处。
+- own 触发文件 marker 为 `[file: <name> (<缓存路径>)]`（`adapter.py` 触发路径）；引用文件为
+  `[文件:<name> → <缓存路径>]`（`_render_ordered`）。两者都给真实可读路径，仅格式沿用各自既有风格。
+
 ### 图片标记两个命名空间（关键，别混）
 | 命名空间 | 含义 | 处理 |
 |---|---|---|
@@ -145,7 +154,9 @@ GitHub → Settings → Developer settings → Tokens 撤销并换新的。
 
 | 提交 | 改动 |
 |---|---|
-| `474393266` | 出站 `[CQ:at,qq=N]` → 结构化 at 段（真 @） |
+| 本提交 | 群文件走 `get_group_file_url` 下载（`get_file` 不支持群文件 elementType 3）；own 触发 + 引用文件/语音给缓存路径（私聊仍走 `get_file`，群/私已区分） |
+| `efb9eebc9` | fork 推送脚本化（`.env.fork-push` + `scripts/push-fork.sh`，gitignored PAT） |
+| `c53486f37` | 引用消息文件/语音触发时下载 + 缓存路径（`_render_ordered resolve_files`） |
 | `2a52ddda7` | 引用围栏移入 channel_context（置空 reply_to_text，去掉 `[Replying to:]` 壳） |
 | `11268e9f7` | 引用消息 `【】` 围栏（上下文非指令） |
 | `b64122458` | `connect()` 接受 `is_reconnect`（对齐上游 base） |
@@ -157,6 +168,6 @@ GitHub → Settings → Developer settings → Tokens 撤销并换新的。
 
 ## 7. 测试 / 验证
 
-- 单测：`/home/bot/miniconda3/envs/hermes/bin/python -m pytest tests/gateway/test_llbot_adapter.py -q`（当前 121 全绿）。
+- 单测：`/home/bot/miniconda3/envs/hermes/bin/python -m pytest tests/gateway/test_llbot_adapter.py -q`（当前 129 全绿）。
 - 导入：`python -c "import plugins.platforms.llbot.adapter"`。
 - 端到端：QQ 群触发观察/引用/@、长回复合并转发、`[CQ:at]` 真 @、运维告警改道 `status_channel`。
