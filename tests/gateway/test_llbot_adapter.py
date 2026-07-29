@@ -581,6 +581,138 @@ def test_reply_quote_file_is_downloaded_with_path():
     assert event.media_urls == []
 
 
+# ── group files via get_group_file_url ───────────────────────────────────
+# A QQ group-file segment is elementType 3, which LLOneBot's get_file REJECTS
+# ("不支持的文件类型: 3"). The adapter must instead call get_group_file_url with
+# (group_id, file_id) to get a real download URL. DM files still use get_file.
+
+
+def _group_file_payload(mid, text, at_self=True):
+    segs = []
+    if at_self:
+        segs.append({"type": "at", "data": {"qq": "111"}})
+    segs.append({"type": "text", "data": {"text": text}})
+    segs.append({"type": "file", "data": {
+        "file": "报告.pdf", "url": "", "file_id": "/abc-def", "file_size": "100",
+    }})
+    return {
+        "post_type": "message", "message_type": "group", "group_id": 5,
+        "user_id": 222, "message_id": mid, "sender": {"nickname": "Alice"},
+        "message": segs,
+    }
+
+
+def _real_file_adapter():
+    """_capture mocks _resolve_file away; these tests exercise the REAL one."""
+    adapter = _capture(_make_adapter())
+    adapter._resolve_file = type(adapter)._resolve_file.__get__(adapter, type(adapter))
+    return adapter
+
+
+def test_own_group_file_uses_get_group_file_url():
+    # Direct group message with a file + @bot. Must resolve via get_group_file_url
+    # (NOT get_file) and surface the cached path in the body.
+    adapter = _real_file_adapter()
+    adapter._download_bytes = AsyncMock(return_value=b"%PDF-1.4 data")
+    calls = []
+
+    def _action(action, params, **kw):
+        calls.append(action)
+        if action == "get_group_file_url":
+            return {"status": "ok", "retcode": 0, "data": {"url": "http://e/file"}}
+        return {"status": "ok", "retcode": 0, "data": {}}
+
+    adapter._call_action = AsyncMock(side_effect=_action)
+    _run(adapter._handle_inbound_message(_group_file_payload("gf1", "看下")))
+    event = adapter.handle_message.call_args.args[0]
+    # get_group_file_url used; get_file NOT used (group file).
+    assert "get_group_file_url" in calls
+    assert "get_file" not in calls
+    # Cached path surfaced inline (real cache_document_from_bytes path). The
+    # OWN-trigger file marker is `[file: <name> (<path>)]` (adapter.py:706).
+    import re
+    m = re.search(r"\[file: 报告\.pdf \(([^)]*cache/documents/[^)]*报告\.pdf)\)\]", event.text)
+    assert m, f"no cached path in body: {event.text!r}"
+    assert os.path.isfile(m.group(1))
+
+
+def test_group_file_url_failure_falls_back_to_get_file():
+    # get_group_file_url fails → fall back to the generic get_file path.
+    adapter = _real_file_adapter()
+    adapter._download_bytes = AsyncMock(return_value=b"bytes")
+    calls = []
+
+    def _action(action, params, **kw):
+        calls.append(action)
+        if action == "get_group_file_url":
+            return {"status": "failed", "retcode": 1200, "wording": "不支持的文件类型: 3"}
+        if action == "get_file":
+            return {"status": "ok", "retcode": 0, "data": {"url": "http://e/fb"}}
+        return {"status": "ok", "retcode": 0, "data": {}}
+
+    adapter._call_action = AsyncMock(side_effect=_action)
+    _run(adapter._handle_inbound_message(_group_file_payload("gf2", "看")))
+    # Both attempted: group-url first (failed), then get_file fallback.
+    assert "get_group_file_url" in calls and "get_file" in calls
+    event = adapter.handle_message.call_args.args[0]
+    assert "[file: 报告.pdf (" in event.text  # resolved via fallback → has path
+
+
+def test_dm_file_does_not_use_get_group_file_url():
+    # DM file: no group_id → get_group_file_url never called, get_file path used.
+    adapter = _real_file_adapter()
+    adapter._download_bytes = AsyncMock(return_value=b"bytes")
+    calls = []
+
+    def _action(action, params, **kw):
+        calls.append(action)
+        if action == "get_file":
+            return {"status": "ok", "retcode": 0, "data": {"url": "http://e/dm"}}
+        return {"status": "ok", "retcode": 0, "data": {}}
+
+    adapter._call_action = AsyncMock(side_effect=_action)
+    payload = {
+        "post_type": "message", "message_type": "private", "user_id": 222,
+        "message_id": "dm1", "sender": {"nickname": "Alice"},
+        "message": [
+            {"type": "text", "data": {"text": "给"}},
+            {"type": "file", "data": {"file": "私.pdf", "file_id": "/x", "url": ""}},
+        ],
+    }
+    _run(adapter._handle_inbound_message(payload))
+    assert "get_group_file_url" not in calls
+    assert "get_file" in calls
+
+
+def test_quoted_group_file_resolves_with_path():
+    # Reply-quote a GROUP file: resolve_files=True + group_id → get_group_file_url.
+    adapter = _real_file_adapter()
+    adapter._download_bytes = AsyncMock(return_value=b"%PDF-1.4 q")
+    calls = []
+
+    def _action(action, params, **kw):
+        calls.append(action)
+        if action == "get_msg":
+            return {"status": "ok", "retcode": 0, "data": {
+                "user_id": 333, "sender": {"nickname": "Bob"},
+                "message": [
+                    {"type": "text", "data": {"text": "看这个"}},
+                    {"type": "file", "data": {"file": "题.pdf", "url": "", "file_id": "/q-1"}},
+                ],
+            }}
+        if action == "get_group_file_url":
+            return {"status": "ok", "retcode": 0, "data": {"url": "http://e/qf"}}
+        return {"status": "ok", "retcode": 0, "data": {}}
+
+    adapter._call_action = AsyncMock(side_effect=_action)
+    _run(adapter._handle_inbound_message(_quoted_payload("gf3", "总结下")))
+    assert "get_group_file_url" in calls
+    ctx = adapter.handle_message.call_args.args[0].channel_context or ""
+    import re
+    assert re.search(r"看这个\[文件:题\.pdf → [^]]*cache/documents/[^]]*题\.pdf\]", ctx), ctx
+
+
+
 def test_reply_quote_file_download_failure_falls_back_to_name():
     # If the quoted file can't be resolved, degrade to the bare name (no crash).
     adapter = _capture(_make_adapter())
