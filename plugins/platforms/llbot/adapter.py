@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import importlib.util
+import json
 import logging
 import os
 import re
@@ -171,6 +172,17 @@ def _outbound_file_ref(host_path: str, host_dir: str, container_dir: str) -> str
 
 _IMG_PLACEHOLDER = "[[IMG]]"
 
+# 合并转发 (forward) rendering budgets. Forward cards can hold dozens of nodes
+# with long text and can nest (a node's content may itself contain a forward
+# segment), so output is bounded on every axis; overruns elide with a marker
+# node instead of dropping silently.
+_FORWARD_MAX_DEPTH = 3          # nesting levels rendered; deeper → max_depth stub
+_FORWARD_MAX_NODES = 30         # per forward level before "…(还有N条未显示)" elision
+_FORWARD_MAX_NODE_CHARS = 500   # per-node content string truncation
+_FORWARD_MAX_TOTAL_CHARS = 6000  # whole JSON body cap (≈1.5–2k tokens)
+_FORWARD_CACHE_TTL = 300.0      # seconds; covers a drain window + re-quotes
+_FORWARD_CACHE_MAX = 64         # LRU cap on the get_forward_msg id cache
+
 
 @dataclass
 class _ObsImg:
@@ -183,6 +195,64 @@ class _ObsImg:
 
     path: str
     caption: Optional[str] = None
+
+
+@dataclass
+class _ForwardCacheEntry:
+    """A cached ``get_forward_msg`` result (short TTL, LRU).
+
+    ``messages`` is the raw ``data.messages`` list, or ``None`` for a cached
+    NEGATIVE (timeout / non-ok / expired card) so a deleted card isn't
+    re-fetched on every render within the TTL.
+    """
+
+    messages: Optional[List[dict]]
+    fetched_at: float
+
+
+def _forward_cache_get(
+    cache: "OrderedDict[str, _ForwardCacheEntry]", fid: str
+) -> Tuple[bool, Optional[List[dict]]]:
+    """Return ``(hit, messages_or_None)``; prune the entry if expired.
+
+    ``hit=True`` with ``messages=None`` is a cached negative — the caller must
+    NOT refetch within the TTL.
+    """
+    ent = cache.get(fid)
+    if ent is None:
+        return False, None
+    if (time.monotonic() - ent.fetched_at) > _FORWARD_CACHE_TTL:
+        cache.pop(fid, None)
+        return False, None
+    cache.move_to_end(fid)
+    return True, ent.messages
+
+
+def _forward_cache_put(
+    cache: "OrderedDict[str, _ForwardCacheEntry]", fid: str, messages: Optional[List[dict]]
+) -> None:
+    """Insert/refresh an entry and LRU-evict to ``_FORWARD_CACHE_MAX``."""
+    cache[fid] = _ForwardCacheEntry(messages=messages, fetched_at=time.monotonic())
+    cache.move_to_end(fid)
+    while len(cache) > _FORWARD_CACHE_MAX:
+        cache.popitem(last=False)
+
+
+class _ForwardBudget:
+    """Mutable char countdown shared across ONE forward render (all levels).
+
+    ``add`` returns False once ``_FORWARD_MAX_TOTAL_CHARS`` is exceeded, telling
+    the renderer to stop adding nodes and mark the block truncated.
+    """
+
+    def __init__(self, limit: Optional[int] = None):
+        # Read the budget at CALL time (not def time) so tests can monkeypatch
+        # _FORWARD_MAX_TOTAL_CHARS; a default-arg binding would freeze it.
+        self.remaining = _FORWARD_MAX_TOTAL_CHARS if limit is None else limit
+
+    def add(self, text: str) -> bool:
+        self.remaining -= len(text)
+        return self.remaining >= 0
 
 
 def _renumber_placeholders(text: str, start_n: int) -> str:
@@ -373,6 +443,10 @@ class LLBotAdapter(BasePlatformAdapter):
         # Mode B observed-chatter buffers: chat_id -> rolling window of recent
         # unaddressed group messages (drained into channel_context on trigger).
         self._observed: Dict[str, deque] = {}
+        # get_forward_msg results keyed by forward id, short TTL + LRU: the
+        # same card is often quoted/observed repeatedly within a drain, and a
+        # nested id would otherwise be refetched per render.
+        self._forward_cache: "OrderedDict[str, _ForwardCacheEntry]" = OrderedDict()
 
     @property
     def name(self) -> str:  # type: ignore[override]
@@ -713,6 +787,26 @@ class LLBotAdapter(BasePlatformAdapter):
                 fname = fdata.get("name") or fdata.get("file") or "file"
                 text_parts.append(f"[file: {fname} ({path})]")
 
+        # 合并转发 segments in the trigger itself. parse_message DROPS forward
+        # segments (it only buckets text/at/reply/image/record/file), so extract
+        # + render them here. Files/voice inside are downloaded (own-trigger =
+        # direct input); images inside are native-attached in the 输入图片
+        # namespace, numbered contiguously AFTER own direct images (their
+        # [[IMG]] placeholders are renumbered inline below, starting at
+        # own_image_count+1 — the label line above only covers own DIRECT ones).
+        fwd_image_count = 0  # images inside forward cards (pos K+1..K+F)
+        for fkind, fdata in onebot.iter_message_segments(payload.get("message")):
+            if fkind != "forward":
+                continue
+            block, fimgs = await self._render_forward_block(
+                fdata.get("id"), resolve_files=True, group_id=gid
+            )
+            if fimgs:
+                media_urls.extend(fimgs)
+                media_types.extend(["image/jpeg"] * len(fimgs))
+                fwd_image_count += len(fimgs)
+            text_parts.append(block)
+
         # Resolve a reply/quote. OneBot's ``reply`` segment carries only the
         # quoted message's id, so fetch its content via ``get_msg`` and render
         # it inline — text and media interleaved in their ORIGINAL order (images
@@ -746,10 +840,11 @@ class LLBotAdapter(BasePlatformAdapter):
                     "【引用消息结束】"
                 )
                 # Renumber quote-image markers in the 输入图片 namespace (after
-                # own images, K+1..) so numbering is contiguous with own.
+                # own direct + forward images, K+F+1..) so numbering is
+                # contiguous across own → forward → quote.
                 if _IMG_PLACEHOLDER in reply_quote_fence:
                     reply_quote_fence = _renumber_placeholders(
-                        reply_quote_fence, own_image_count + 1
+                        reply_quote_fence, own_image_count + fwd_image_count + 1
                     )
 
         # Drain observed group chatter into channel_context. Observed images
@@ -767,6 +862,13 @@ class LLBotAdapter(BasePlatformAdapter):
             )
 
         text = "\n".join(p for p in text_parts if p).strip()
+        # Renumber forward-card [[IMG]] placeholders inline (positions
+        # own_image_count+1..K+F, right after own DIRECT images). Own direct
+        # images were labeled by the literal [输入图片i] line above (untouched
+        # by renumbering — it's not a placeholder), so this only touches the
+        # forward blocks and keeps own → forward numbering contiguous.
+        if _IMG_PLACEHOLDER in text:
+            text = _renumber_placeholders(text, own_image_count + 1)
 
         if media_types and not any(t.startswith("audio/") for t in media_types) \
                 and any(t.startswith("image/") for t in media_types):
@@ -1478,6 +1580,232 @@ class LLBotAdapter(BasePlatformAdapter):
         sender_display = f"{name} (QQ {uid})" if uid else name
         return data.get("message"), sender_display
 
+    async def _fetch_forward_messages(self, forward_id: Any) -> Optional[List[dict]]:
+        """Fetch a 合并转发's node list via ``get_forward_msg`` (short-TTL LRU cache).
+
+        Returns the raw ``data.messages`` list, or ``None`` on any failure
+        (timeout, non-ok response, expired/deleted card, malformed payload) —
+        callers render a placeholder, never crash. Negative results are cached
+        too (a deleted card stays deleted for the TTL), keyed by str(forward_id).
+        """
+        fid = str(forward_id or "").strip()
+        if not fid:
+            return None
+        hit, cached = _forward_cache_get(self._forward_cache, fid)
+        if hit:
+            return cached
+        try:
+            resp = await self._call_action("get_forward_msg", {"id": fid}, timeout=15.0)
+        except Exception as exc:
+            logger.debug("[LLBot] get_forward_msg(%s) failed: %s", fid, exc)
+            _forward_cache_put(self._forward_cache, fid, None)
+            return None
+        if not onebot.response_ok(resp):
+            logger.debug(
+                "[LLBot] get_forward_msg(%s) non-ok: %s",
+                fid, resp.get("wording") or resp.get("retcode"),
+            )
+            _forward_cache_put(self._forward_cache, fid, None)
+            return None
+        data = resp.get("data") or {}
+        msgs = data.get("messages") if isinstance(data, dict) else None
+        if not isinstance(msgs, list):
+            _forward_cache_put(self._forward_cache, fid, None)
+            return None
+        _forward_cache_put(self._forward_cache, fid, msgs)
+        return msgs
+
+    # ── 合并转发 (forward) rendering ─────────────────────────────────────
+
+    async def _render_forward_node_content(
+        self,
+        content: Any,
+        depth: int,
+        budget: "_ForwardBudget",
+        resolve_files: bool,
+        group_id: Optional[int],
+    ) -> Tuple[Any, List[str]]:
+        """Render one forward node's ``content`` to its JSON value.
+
+        Returns ``(value, image_paths)`` where ``value`` is a ``str`` (flat
+        text), a ``{"forward": {...}}`` dict (pure nested forward), or a
+        ``list`` mixing text strings and forward dicts (text + nested). Every
+        resolved image path is appended to ``image_paths`` in order (the same
+        ``(chunk, path)`` contract as ``_render_ordered`` tokens, so callers
+        renumber/attach them uniformly).
+
+        text → inline str; image → resolved path → ``[[IMG]]`` inline + path in
+        the list (unresolved → ``[图]``); record/file → downloaded with a cached
+        path when ``resolve_files`` (own/quote), else name-only (background);
+        at → ``@name(QQ N)``; nested forward → recursion (depth-bounded) or a
+        ``max_depth`` stub. Unknown kinds omitted. Node text truncates at
+        ``_FORWARD_MAX_NODE_CHARS``.
+        """
+        parts: List[Any] = []          # str chunks and/or {"forward": ...} dicts
+        image_paths: List[str] = []
+        for kind, sdata in onebot.iter_message_segments(content):
+            if kind == "text":
+                txt = str(sdata.get("text", ""))
+                if txt:
+                    parts.append(txt)
+            elif kind == "image":
+                path = await self._resolve_image(sdata)
+                if path:
+                    parts.append(_IMG_PLACEHOLDER)
+                    image_paths.append(path)
+                else:
+                    parts.append("[图]")
+            elif kind == "record":
+                if resolve_files:
+                    rpath = await self._resolve_record(sdata)
+                    parts.append(f"[语音: <音频已缓存> {rpath}]" if rpath else "[语音]")
+                else:
+                    parts.append("[语音]")
+            elif kind == "file":
+                fname = sdata.get("name") or sdata.get("file") or "文件"
+                if resolve_files:
+                    fpath = await self._resolve_file(sdata, group_id=group_id)
+                    parts.append(f"[文件:{fname} → {fpath}]" if fpath else f"[文件:{fname}]")
+                else:
+                    parts.append(f"[文件:{fname}]")
+            elif kind == "at":
+                qq = str(sdata.get("qq", "")).strip()
+                if qq.lower() == "all":
+                    parts.append("@全体成员")
+                elif qq:
+                    aname = sdata.get("name") or ""
+                    parts.append(f"@{aname}(QQ {qq})" if aname else f"@QQ {qq}")
+            elif kind == "forward":
+                nested = await self._render_forward_tree_from_id(
+                    sdata.get("id"), depth + 1, budget, resolve_files, group_id
+                )
+                parts.append({"forward": nested})
+            # reply / face / mface / json / etc. → omitted
+
+        # Collapse: all-str → one str; single dict → that dict; else a list.
+        if all(isinstance(p, str) for p in parts):
+            value: Any = "".join(parts)
+            if len(value) > _FORWARD_MAX_NODE_CHARS:
+                value = value[:_FORWARD_MAX_NODE_CHARS] + "…"
+        elif len(parts) == 1:
+            value = parts[0]
+        else:
+            # Merge adjacent str chunks so the JSON list is compact.
+            merged: List[Any] = []
+            for p in parts:
+                if isinstance(p, str) and merged and isinstance(merged[-1], str):
+                    merged[-1] += p
+                else:
+                    merged.append(p)
+            value = merged
+        return value, image_paths
+
+    async def _render_forward_tree_from_id(
+        self,
+        forward_id: Any,
+        depth: int,
+        budget: "_ForwardBudget",
+        resolve_files: bool,
+        group_id: Optional[int],
+    ) -> Dict[str, Any]:
+        """Fetch + render a nested forward into its ``{"forward": {...}}`` payload."""
+        if depth > _FORWARD_MAX_DEPTH:
+            return {"count": 0, "truncated": True, "messages": [], "error": "max_depth"}
+        msgs = await self._fetch_forward_messages(forward_id)
+        if msgs is None:
+            return {"count": 0, "truncated": False, "messages": [], "error": "unavailable"}
+        nodes, _imgs, truncated = await self._render_forward_tree(
+            msgs, depth, budget, resolve_files, group_id
+        )
+        return {"count": len(nodes), "truncated": truncated, "messages": nodes}
+
+    async def _render_forward_tree(
+        self,
+        messages: List[dict],
+        depth: int,
+        budget: "_ForwardBudget",
+        resolve_files: bool,
+        group_id: Optional[int],
+    ) -> Tuple[List[dict], List[str], bool]:
+        """Render one forward level's raw nodes to the JSON ``messages`` list.
+
+        Returns ``(nodes, image_paths, truncated)``. Applies the per-level node
+        cap (appends a "…(还有N条未显示)" synthetic node) and the global char
+        budget (stops, marks truncated). Malformed nodes degrade to sender
+        ``未知`` / empty content rather than raising.
+        """
+        nodes: List[dict] = []
+        image_paths: List[str] = []
+        truncated = False
+        total = len(messages)
+        for i, node in enumerate(messages):
+            if i >= _FORWARD_MAX_NODES:
+                nodes.append({
+                    "n": i + 1, "sender": "", "time": "",
+                    "content": f"…(还有{total - i}条未显示)",
+                })
+                truncated = True
+                break
+            if not isinstance(node, dict):
+                node = {}
+            sender = node.get("sender") or {}
+            name = sender.get("nickname") or sender.get("card") or ""
+            uid = str(sender.get("user_id", "") or "").strip()
+            if name and uid:
+                sender_disp = f"{name} (QQ {uid})"
+            elif uid:
+                sender_disp = f"QQ {uid}"
+            else:
+                sender_disp = name or "未知"
+            value, imgs = await self._render_forward_node_content(
+                node.get("content"), depth, budget, resolve_files, group_id
+            )
+            text_for_budget = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+            if not budget.add(text_for_budget):
+                nodes.append({
+                    "n": i + 1, "sender": "", "time": "",
+                    "content": "…(转发内容过长，已截断)",
+                })
+                truncated = True
+                break
+            image_paths.extend(imgs)
+            nodes.append({
+                "n": i + 1,
+                "sender": sender_disp,
+                "time": _fmt_time(node.get("time")),
+                "content": value,
+            })
+        return nodes, image_paths, truncated
+
+    async def _render_forward_block(
+        self,
+        forward_id: Any,
+        *,
+        depth: int = 1,
+        resolve_files: bool = False,
+        group_id: Optional[int] = None,
+    ) -> Tuple[str, List[str]]:
+        """Render one forward segment to the fenced agent-facing JSON block.
+
+        Returns ``(block_text, image_paths)``. ``block_text`` is the full
+        【合并转发消息 · N条 · 仅作上下文】 / ```json … ``` / 【合并转发结束】 fence
+        with ``[[IMG]]`` placeholders NOT yet renumbered (the caller renumbers —
+        the same contract as ``_render_ordered`` tokens). On fetch failure it
+        returns a single-line placeholder with no image paths — ingestion never
+        fails on a bad forward card.
+        """
+        msgs = await self._fetch_forward_messages(forward_id)
+        if msgs is None:
+            return "【合并转发消息 · 无法加载（已过期或被删除）】", []
+        budget = _ForwardBudget()
+        nodes, image_paths, truncated = await self._render_forward_tree(
+            msgs, depth, budget, resolve_files, group_id
+        )
+        body = json.dumps(nodes, ensure_ascii=False, indent=1)
+        header = f"【合并转发消息 · {len(nodes)}条 · 仅作上下文，按发送者/时间排列】"
+        fence = f"{header}\n```json\n{body}\n```\n【合并转发结束】"
+        return fence, image_paths
+
     async def _render_ordered(
         self, message: Any, *, resolve_files: bool = False, group_id: Optional[int] = None
     ) -> List[Tuple[str, Optional[str]]]:
@@ -1506,6 +1834,13 @@ class LLBotAdapter(BasePlatformAdapter):
         appends each path as a media attachment) and observe (caller embeds
         the placeholder inline, rendered at drain) so text/media interleaving
         stays faithful.
+
+        A ``forward`` (合并转发) segment expands via ``_render_forward_block``
+        into a fenced JSON tree (nested forwards included, depth/size-bounded);
+        the block token is followed by one ``(_IMG_PLACEHOLDER, path)`` token
+        per image inside it, so global placeholder order == path order and the
+        caller's renumber/attach/legend works unchanged. Fetch failure yields a
+        single-line placeholder, never an exception.
         """
         tokens: List[Tuple[str, Optional[str]]] = []
         for kind, sdata in onebot.iter_message_segments(message):
@@ -1545,7 +1880,18 @@ class LLBotAdapter(BasePlatformAdapter):
                     marker = f"@{aname}(QQ {qq})" if aname else f"@QQ {qq}"
                     tokens.append((marker, None))
             elif kind == "forward":
-                tokens.append(("[合并转发消息]", None))
+                # Expand the card to a fenced JSON tree (nested forwards
+                # included). The block token comes FIRST, then one image token
+                # per image inside it — so the block's [[IMG]] placeholders
+                # precede any later segment's, keeping the global placeholder
+                # order == path order that every caller's renumber/attach/legend
+                # relies on. resolve_files/group_id pass straight through.
+                block, fimgs = await self._render_forward_block(
+                    sdata.get("id"), resolve_files=resolve_files, group_id=group_id
+                )
+                tokens.append((block, None))
+                for fp in fimgs:
+                    tokens.append((_IMG_PLACEHOLDER, fp))
             # reply / face / mface / json / etc. → omitted
         return tokens
 

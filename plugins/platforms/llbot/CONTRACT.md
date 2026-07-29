@@ -57,6 +57,17 @@
 `[昵称 (QQ N) @你]` / `[昵称 (QQ N) @全体成员]` / `[昵称 (QQ N) 提到了你]`（唤醒词）注入 body。
 gateway 还会给共享群会话加发言者前缀 `[昵称]`（name-only，run.py:8820）——所以名字会出现两次，QQ 在 mention note 里。
 
+### 合并转发（forward，可嵌套）
+- 触发/引用里的 forward 段经 `get_forward_msg(id)` 展开成**【合并转发消息 · N条 · 仅作上下文】```json …```【合并转发结束】** 围栏：
+  每节点 `{n, sender:"昵称 (QQ N)", time:"MM-DD HH:MM:SS", content}`；`content` 纯文本→string、纯嵌套→
+  `{"forward":{count,truncated,messages:[…递归…]}}`、混合→list。嵌套深度上限 `_FORWARD_MAX_DEPTH=3`。
+- **own 触发**：围栏进 body；转发内图片原生附着（`[输入图片N]`，接在 own 直发图后连续编号）；文件/语音下载给路径。
+- **引用**：围栏进引用围栏；图片附着（连续编号）；文件/语音下载给路径。
+- **背景**：围栏进观察行；图片**不附着**（`[背景图N: caption]`+图例，现有机制）；文件/语音只给名。
+- 规模上限（`_FORWARD_MAX_NODES=30`/层、`_FORWARD_MAX_NODE_CHARS=500`、` _FORWARD_MAX_TOTAL_CHARS=6000`）超出省略
+  （`…(还有N条未显示)` / `…(转发内容过长，已截断)`）；`get_forward_msg` 短 TTL LRU 缓存（含负缓存，
+  `_FORWARD_CACHE_TTL=300s`）。**fetch 失败 → `【合并转发消息 · 无法加载（已过期或被删除）】`，绝不 crash。**
+
 ### poke
 `[戳一戳] {name} 戳了戳你`，上下文与消息触发一致（drain 观察 + `[now:]` + 背景图），仅文本不同。
 
@@ -154,7 +165,8 @@ GitHub → Settings → Developer settings → Tokens 撤销并换新的。
 
 | 提交 | 改动 |
 |---|---|
-| 本提交 | 群文件走 `get_group_file_url` 下载（`get_file` 不支持群文件 elementType 3）；own 触发 + 引用文件/语音给缓存路径（私聊仍走 `get_file`，群/私已区分） |
+| 合并转发解析 | 合并转发（含嵌套）解析成 JSON 围栏；own/引用下载文件给路径，背景只给名；图片沿用 输入图片/背景图 编号（本次工作，SHA 见 `git log`） |
+| `13f526219` | 群文件走 `get_group_file_url` 下载（`get_file` 不支持群文件 elementType 3）；own 触发 + 引用文件/语音给缓存路径（私聊仍走 `get_file`，群/私已区分） |
 | `efb9eebc9` | fork 推送脚本化（`.env.fork-push` + `scripts/push-fork.sh`，gitignored PAT） |
 | `c53486f37` | 引用消息文件/语音触发时下载 + 缓存路径（`_render_ordered resolve_files`） |
 | `2a52ddda7` | 引用围栏移入 channel_context（置空 reply_to_text，去掉 `[Replying to:]` 壳） |
@@ -168,6 +180,6 @@ GitHub → Settings → Developer settings → Tokens 撤销并换新的。
 
 ## 7. 测试 / 验证
 
-- 单测：`/home/bot/miniconda3/envs/hermes/bin/python -m pytest tests/gateway/test_llbot_adapter.py -q`（当前 129 全绿）。
+- 单测：`/home/bot/miniconda3/envs/hermes/bin/python -m pytest tests/gateway/test_llbot_adapter.py -q`（当前 144 全绿）。
 - 导入：`python -c "import plugins.platforms.llbot.adapter"`。
 - 端到端：QQ 群触发观察/引用/@、长回复合并转发、`[CQ:at]` 真 @、运维告警改道 `status_channel`。
