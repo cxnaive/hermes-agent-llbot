@@ -726,6 +726,59 @@ def test_send_private_routes_send_private_msg():
     assert params["user_id"] == 9
 
 
+# ── outbound [CQ:at] → real at segments ──────────────────────────────────
+
+
+def test_outbound_cq_at_becomes_at_segment():
+    # [CQ:at,qq=N] in the outbound text must become a structured at segment
+    # (a real QQ @), not a literal string in the text.
+    adapter = _connected(_make_adapter())
+    _run(adapter.send("group:123", "你好 [CQ:at,qq=3883393282] 在吗"))
+    _, params = adapter._call_action.call_args.args
+    segs = params["message"]
+    assert {"type": "at", "data": {"qq": "3883393282"}} in segs
+    texts = "".join(s["data"]["text"] for s in segs if s["type"] == "text")
+    assert "[CQ:at" not in texts                     # marker consumed, not literal
+    assert "你好" in texts and "在吗" in texts       # surrounding text preserved
+
+
+def test_outbound_cq_at_multiple_and_at_all():
+    # Several @s in one message each become their own at segment; @all works.
+    segs = onebot.parse_cq_outbound("[CQ:at,qq=1] 和 [CQ:at,qq=2] 以及 [CQ:at,qq=all]")
+    ats = [s["data"]["qq"] for s in segs if s["type"] == "at"]
+    assert ats == ["1", "2", "all"]
+
+
+def test_outbound_cq_at_tolerates_spacing_and_case():
+    segs = onebot.parse_cq_outbound("hi[CQ:at, qq=42]x")
+    assert {"type": "at", "data": {"qq": "42"}} in segs
+
+
+def test_outbound_non_at_cq_codes_stay_literal():
+    # Non-at [CQ:...] an agent emits is NOT parsed (it can't control media);
+    # it stays as literal text rather than becoming a real segment.
+    segs = onebot.parse_cq_outbound("看这 [CQ:image,file=x]")
+    assert all(s["type"] == "text" for s in segs)
+    assert "[CQ:image" in "".join(s["data"]["text"] for s in segs)
+
+
+def test_outbound_cq_at_in_forward_node():
+    # A long group reply (>forward_limit) goes through send_group_forward_msg;
+    # the [CQ:at] must survive chunking and become an at segment in a node.
+    adapter = _connected(_make_adapter(forward_limit=50))
+    adapter._self_id = "111"  # forward branch requires a bot uin (_connected leaves it '')
+    long_text = (
+        "这段话非常非常非常非常的长，长到超过了五十个字的限制呢。"
+        "[CQ:at,qq=7] 这一段也写得特别特别特别特别特别特别特别特别长。"
+    )
+    result = _run(adapter.send("group:123", long_text))
+    assert result.success
+    action, params = adapter._call_action.call_args.args
+    assert action == "send_group_forward_msg"
+    node_segs = [seg for node in params["messages"] for seg in node["data"]["content"]]
+    assert any(s["type"] == "at" and s["data"]["qq"] == "7" for s in node_segs)
+
+
 def test_status_routed_to_status_channel_when_set():
     # Operational status (warn/info/progress) is redirected to status_channel
     # (here a private DM) instead of the originating group, prefixed with the
