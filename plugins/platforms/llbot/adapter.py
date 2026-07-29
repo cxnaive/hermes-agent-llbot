@@ -1204,7 +1204,7 @@ class LLBotAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="empty forward body")
         messages = [
             onebot.forward_node(
-                [onebot.text_segment(c)],
+                onebot.parse_cq_outbound(c),
                 uin=self._self_id,
                 name=self.forward_sender_name,
             )
