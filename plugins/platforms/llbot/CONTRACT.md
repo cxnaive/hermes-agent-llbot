@@ -32,6 +32,11 @@
   让 gateway 跳过默认 `[Replying to:]` 包装，改由 adapter 把**【用户回复了这条消息 …】…【引用消息结束】**
   围栏块追加到 channel_context（`[now:]` 之后、紧贴 `[New message]`），使 agent 把它当上下文而非指令。
 - `reply_to_message_id` 保留给出站回复用。
+- **引用里的文件/语音**：因 quote 的 segments 来自触发时刻**新鲜的 `get_msg`**（URL 未过期），
+  触发时 `_render_ordered(..., resolve_files=True)` **下载**并在 marker 内给出缓存路径——
+  `[文件:name → <缓存路径>]`、`[语音: <音频已缓存…> <缓存路径>]`，agent 用 `read_file` 读内容。
+  文件/语音**不原生附着**（不进 `media_urls`），只给路径；下载失败回退为裸 `[文件:name]`/`[语音]`。
+  背景消息里的文件**不下载**（可能很大），仅 `[文件:name]`。
 
 ### 图片标记两个命名空间（关键，别混）
 | 命名空间 | 含义 | 处理 |

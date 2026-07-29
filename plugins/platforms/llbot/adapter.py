@@ -719,7 +719,11 @@ class LLBotAdapter(BasePlatformAdapter):
             quoted = await self._resolve_quoted_message(parsed.reply_to_message_id)
             if quoted:
                 q_message, q_display = quoted
-                tokens = await self._render_ordered(q_message)
+                # resolve_files=True: the quote's segments come from a FRESH
+                # get_msg at trigger time, so file/record URLs are live —
+                # download them now and surface their cached paths inline so
+                # the agent can read the file / voice the user replied to.
+                tokens = await self._render_ordered(q_message, resolve_files=True)
                 for _chunk, q_path in tokens:
                     if q_path:
                         media_urls.append(q_path)
@@ -1467,7 +1471,7 @@ class LLBotAdapter(BasePlatformAdapter):
         return data.get("message"), sender_display
 
     async def _render_ordered(
-        self, message: Any
+        self, message: Any, *, resolve_files: bool = False
     ) -> List[Tuple[str, Optional[str]]]:
         """Render a message's segments in original order, resolving images.
 
@@ -1478,9 +1482,19 @@ class LLBotAdapter(BasePlatformAdapter):
         ``_renumber_placeholders`` → ``[输入图片N]`` for quoted images
         (native-attached), ``_render_observe_image_refs`` → ``[背景图N: …]``
         for observed images (text-described). An unresolved image yields
-        ``("[图]", None)``. Shared by quote rendering (caller appends each path
-        as a media attachment) and observe (caller embeds the placeholder
-        inline, rendered at drain) so text/media interleaving stays faithful.
+        ``("[图]", None)``.
+
+        A ``file`` segment is rendered differently by caller: with
+        ``resolve_files=True`` (reply-quote) the file is downloaded NOW via
+        ``_resolve_file`` — safe because the quote's segments come from a
+        fresh ``get_msg`` at trigger time, so its URLs are live — and the
+        marker carries the cached path (``[文件:name → <path>]``) so the agent
+        can read it. With ``resolve_files=False`` (observe) it's only the
+        name (``[文件:name]``, no download): background files can be large and
+        aren't worth caching speculatively. Shared by quote rendering (caller
+        appends each path as a media attachment) and observe (caller embeds
+        the placeholder inline, rendered at drain) so text/media interleaving
+        stays faithful.
         """
         tokens: List[Tuple[str, Optional[str]]] = []
         for kind, sdata in onebot.iter_message_segments(message):
@@ -1493,10 +1507,24 @@ class LLBotAdapter(BasePlatformAdapter):
                 else:
                     tokens.append(("[图]", None))
             elif kind == "record":
-                tokens.append(("[语音]", None))
+                if resolve_files:
+                    rpath = await self._resolve_record(sdata)
+                    if rpath:
+                        tokens.append((f"[语音: <音频已缓存，可用 read_file 读取> {rpath}]", None))
+                    else:
+                        tokens.append(("[语音]", None))
+                else:
+                    tokens.append(("[语音]", None))
             elif kind == "file":
                 fname = sdata.get("name") or sdata.get("file") or "文件"
-                tokens.append((f"[文件:{fname}]", None))
+                if resolve_files:
+                    fpath = await self._resolve_file(sdata)
+                    if fpath:
+                        tokens.append((f"[文件:{fname} → {fpath}]", None))
+                    else:
+                        tokens.append((f"[文件:{fname}]", None))
+                else:
+                    tokens.append((f"[文件:{fname}]", None))
             elif kind == "at":
                 qq = str(sdata.get("qq", "")).strip()
                 if qq.lower() == "all":
@@ -1970,6 +1998,10 @@ def register(ctx):
             "background images described as text (NOT shown as pixels); to "
             "view one in detail, call vision_analyze with image_url set to its "
             "path from the path legend at the end of the background block. "
+            "If the user reply-quotes a message containing a file or voice, "
+            "its marker shows a cached local path (`[文件:name → <path>]` / "
+            "`[语音: <音频已缓存…> <path>]`) — read that path with read_file "
+            "to get its content. "
             "When poked you receive \"[戳一戳] … 戳了戳你\". To reply or send "
             "media, use the send_message tool with this chat's target "
             "('llbot:group:<id>' or 'llbot:private:<qq>', supplied per "
