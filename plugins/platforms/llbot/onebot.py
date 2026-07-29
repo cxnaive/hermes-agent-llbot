@@ -128,18 +128,60 @@ def file_segment(file_ref: str, name: Optional[str] = None, **extra: Any) -> dic
     return {"type": "file", "data": data}
 
 
+# ---------------------------------------------------------------------------
+# Outbound CQ-code → segments
+# ---------------------------------------------------------------------------
+
+# Matches the OUTBOUND @-mention marker an agent can put in its message text:
+# ``[CQ:at,qq=<number>]`` (or ``[CQ:at,qq=all]`` for @全体成员). Deliberately
+# narrower than the inbound ``_CQ_RE`` — only ``at`` is honored outbound; any
+# other ``[CQ:...]`` an agent emits stays as literal text (never parsed as an
+# image/record/etc. it doesn't control).
+_CQ_AT_RE = re.compile(r"\[CQ:at\s*,\s*qq\s*=\s*([0-9]+|all)\s*\]", re.IGNORECASE)
+
+
+def parse_cq_outbound(text: str) -> List[dict]:
+    """Split outbound text into ``text``/``at`` segments on ``[CQ:at,qq=…]``.
+
+    A group @ in QQ only fires on a structured ``at`` segment — the literal
+    string ``[CQ:at,qq=N]`` is just plain text and does NOT @ anyone. This lets
+    the agent (told in platform_hint to write ``[CQ:at,qq=<number>]``) produce
+    a real @ by emitting that marker. Non-at ``[CQ:...]`` codes are left as
+    literal text. Empty/neighboring text chunks are dropped; if nothing
+    remains, a single empty ``text`` segment is returned.
+    """
+    text = str(text or "")
+    segments: List[dict] = []
+    cursor = 0
+    for match in _CQ_AT_RE.finditer(text):
+        if match.start() > cursor:
+            chunk = text[cursor:match.start()]
+            if chunk.strip():
+                segments.append(text_segment(chunk))
+        segments.append(at_segment(match.group(1)))
+        cursor = match.end()
+    tail = text[cursor:]
+    if tail.strip():
+        segments.append(text_segment(tail))
+    if not segments:
+        segments.append(text_segment(text))
+    return segments
+
+
 def build_send_segments(text: str, reply_to: Optional[str] = None) -> List[dict]:
     """Build the OneBot ``message`` array for an outbound text send.
 
     A ``reply`` segment (when ``reply_to`` is set) is placed FIRST per the
-    OneBot v11 convention, followed by the text body.  Empty text after a
-    reply still produces a valid one-element reply-only message.
+    OneBot v11 convention, followed by the text body parsed via
+    :func:`parse_cq_outbound` so an agent's ``[CQ:at,qq=<number>]`` markers
+    become real ``at`` segments (a real QQ @). Empty text after a reply still
+    produces a valid one-element reply-only message.
     """
     segments: List[dict] = []
     if reply_to:
         segments.append(reply_segment(reply_to))
     if text:
-        segments.append(text_segment(text))
+        segments.extend(parse_cq_outbound(text))
     if not segments:
         # Degenerate input — emit a single empty text so the action payload is
         # never an empty array (some OneBot impls reject []).
