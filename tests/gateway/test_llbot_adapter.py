@@ -1762,3 +1762,316 @@ def test_env_enablement_includes_chat_allowlists(monkeypatch):
     seed = _mod._env_enablement()
     assert seed["group_allow_from"] == "11,22"
     assert seed["allow_from"] == "333"
+
+
+# ── 合并转发 (forward) → JSON tree ───────────────────────────────────────
+# get_forward_msg(id) → data.messages[] of {content:[segments], sender, time}.
+# A node's content may contain a nested {"type":"forward","data":{"id":...}}.
+# The adapter expands forward segments into a 【合并转发消息…】 fenced JSON tree.
+
+
+def _forward_seg(fid):
+    return {"type": "forward", "data": {"id": str(fid)}}
+
+
+def _fwd_node(text_or_content, nick="Nick", uid=1001, ts=1785315460):
+    content = (
+        [{"type": "text", "data": {"text": text_or_content}}]
+        if isinstance(text_or_content, str)
+        else text_or_content
+    )
+    return {"content": content, "sender": {"nickname": nick, "user_id": uid}, "time": ts}
+
+
+def _fwd_resp(nodes):
+    return {"status": "ok", "retcode": 0, "data": {"messages": nodes}}
+
+
+def _fwd_action(forward_map, **extra_actions):
+    """_call_action side_effect: dispatch get_forward_msg by id (+ optional get_msg)."""
+    def _action(action, params, **kw):
+        if action == "get_forward_msg":
+            fid = str((params or {}).get("id"))
+            return forward_map.get(fid, {"status": "failed", "retcode": 1404})
+        if action in extra_actions:
+            return extra_actions[action]
+        return {"status": "ok", "retcode": 0, "data": {}}
+    return AsyncMock(side_effect=_action)
+
+
+def test_forward_in_quote_renders_json_tree():
+    adapter = _capture(_make_adapter())
+    nodes = [
+        _fwd_node("第一条消息", "Nick1", 1001, 1785315460),
+        _fwd_node("第二条消息", "Nick2", 1002, 1785315520),
+    ]
+    adapter._call_action = _fwd_action(
+        {"F1": _fwd_resp(nodes)},
+        get_msg={"status": "ok", "retcode": 0, "data": {
+            "user_id": 333, "sender": {"nickname": "Bob"},
+            "message": [_forward_seg("F1")],
+        }},
+    )
+    _run(adapter._handle_inbound_message(_quoted_payload("fw1", "看看这个")))
+    event = adapter.handle_message.call_args.args[0]
+    ctx = event.channel_context or ""
+    assert "【合并转发消息 · 2条" in ctx
+    assert "```json" in ctx
+    assert "【合并转发结束】" in ctx
+    assert '"sender": "Nick1 (QQ 1001)"' in ctx
+    assert "第一条消息" in ctx and "第二条消息" in ctx
+    assert event.reply_to_text is None
+
+
+def test_forward_image_placeholder_renumbered_in_quote():
+    adapter = _capture(_make_adapter())
+    adapter._resolve_image = AsyncMock(return_value="/cache/f1.jpg")
+    nodes = [_fwd_node([{"type": "text", "data": {"text": "看图 "}},
+                        {"type": "image", "data": {"file": "x.jpg", "url": "http://e/x"}}])]
+    adapter._call_action = _fwd_action(
+        {"F1": _fwd_resp(nodes)},
+        get_msg={"status": "ok", "retcode": 0, "data": {
+            "user_id": 333, "sender": {"nickname": "Bob"}, "message": [_forward_seg("F1")]}},
+    )
+    _run(adapter._handle_inbound_message(_quoted_payload("fw2", "嗯")))
+    event = adapter.handle_message.call_args.args[0]
+    ctx = event.channel_context or ""
+    # No own images → forward image is [输入图片1]; placeholder fully renumbered.
+    assert "[输入图片1]" in ctx
+    assert "[[IMG]]" not in ctx
+    assert event.media_urls == ["/cache/f1.jpg"]
+
+
+def test_forward_nested_two_levels():
+    adapter = _capture(_make_adapter())
+    inner = [_fwd_node("嵌套里的内容", "Inner", 2001)]
+    outer = [
+        _fwd_node("外层第一条", "Outer", 2002),
+        _fwd_node([_forward_seg("F2")], "Outer", 2002),
+    ]
+    action = _fwd_action(
+        {"F1": _fwd_resp(outer), "F2": _fwd_resp(inner)},
+        get_msg={"status": "ok", "retcode": 0, "data": {
+            "user_id": 333, "sender": {"nickname": "Bob"}, "message": [_forward_seg("F1")]}},
+    )
+    adapter._call_action = action
+    _run(adapter._handle_inbound_message(_quoted_payload("fw3", "看")))
+    ctx = adapter.handle_message.call_args.args[0].channel_context or ""
+    assert '"forward"' in ctx
+    assert "外层第一条" in ctx and "嵌套里的内容" in ctx
+    # Both forwards fetched.
+    fetched = {str(c.args[1].get("id")) for c in action.await_args_list
+               if c.args[0] == "get_forward_msg"}
+    assert {"F1", "F2"} <= fetched
+
+
+def test_forward_fetch_failure_placeholder():
+    adapter = _capture(_make_adapter())
+    # get_forward_msg times out, but get_msg (the quote fetch) still succeeds so
+    # the quote fence (and its forward placeholder) is actually rendered.
+    def _action(action, params, **kw):
+        if action == "get_forward_msg":
+            raise asyncio.TimeoutError()
+        if action == "get_msg":
+            return {"status": "ok", "retcode": 0, "data": {
+                "user_id": 333, "sender": {"nickname": "Bob"}, "message": [_forward_seg("F1")]}}
+        return {"status": "ok", "retcode": 0, "data": {}}
+    adapter._call_action = AsyncMock(side_effect=_action)
+    adapter._forward_cache.clear()
+    _run(adapter._handle_inbound_message(_quoted_payload("fw4", "看")))
+    ctx = adapter.handle_message.call_args.args[0].channel_context or ""
+    assert "【合并转发消息 · 无法加载" in ctx
+    adapter.handle_message.assert_awaited_once()  # ingestion survived
+
+
+def test_forward_node_budget_elision(monkeypatch):
+    monkeypatch.setattr(_mod, "_FORWARD_MAX_NODES", 5)
+    adapter = _capture(_make_adapter())
+    nodes = [_fwd_node(f"消息{i}", "N", 1000 + i) for i in range(12)]
+    adapter._call_action = _fwd_action(
+        {"F1": _fwd_resp(nodes)},
+        get_msg={"status": "ok", "retcode": 0, "data": {
+            "user_id": 333, "sender": {"nickname": "Bob"}, "message": [_forward_seg("F1")]}},
+    )
+    _run(adapter._handle_inbound_message(_quoted_payload("fw5", "看")))
+    ctx = adapter.handle_message.call_args.args[0].channel_context or ""
+    assert "还有7条未显示" in ctx
+    assert "消息4" in ctx and "消息11" not in ctx  # only first 5 real nodes
+
+
+def test_forward_char_budget_truncates(monkeypatch):
+    # Budget between one node's size and the total: node text truncates to
+    # _FORWARD_MAX_NODE_CHARS first, then the global budget stops further nodes.
+    monkeypatch.setattr(_mod, "_FORWARD_MAX_NODE_CHARS", 200)
+    monkeypatch.setattr(_mod, "_FORWARD_MAX_TOTAL_CHARS", 450)
+    adapter = _capture(_make_adapter())
+    nodes = [_fwd_node("长" * 400, "N", 1001) for _ in range(6)]
+    adapter._call_action = _fwd_action(
+        {"F1": _fwd_resp(nodes)},
+        get_msg={"status": "ok", "retcode": 0, "data": {
+            "user_id": 333, "sender": {"nickname": "Bob"}, "message": [_forward_seg("F1")]}},
+    )
+    _run(adapter._handle_inbound_message(_quoted_payload("fw6", "看")))
+    ctx = adapter.handle_message.call_args.args[0].channel_context or ""
+    assert "转发内容过长，已截断" in ctx  # global budget kicked in
+    # Fewer than all 6 nodes rendered despite 6 source nodes.
+    assert ctx.count('"sender": "N (QQ 1001)"') < 6
+
+
+def test_forward_cache_hit_avoids_refetch():
+    adapter = _capture(_make_adapter())
+    nodes = [_fwd_node("同一张转发", "N", 1001)]
+    action = _fwd_action(
+        {"F1": _fwd_resp(nodes)},
+        get_msg={"status": "ok", "retcode": 0, "data": {
+            "user_id": 333, "sender": {"nickname": "Bob"}, "message": [_forward_seg("F1")]}},
+    )
+    adapter._call_action = action
+    # Two separate quoted triggers referencing the SAME forward id.
+    _run(adapter._handle_inbound_message(_quoted_payload("fw7a", "看")))
+    _run(adapter._handle_inbound_message(_quoted_payload("fw7b", "再看")))
+    fetches = [c for c in action.await_args_list if c.args[0] == "get_forward_msg"]
+    assert len(fetches) == 1  # cached
+
+
+def test_forward_in_trigger_message():
+    adapter = _capture(_make_adapter())
+    adapter._resolve_image = AsyncMock(return_value="/cache/f.jpg")
+    nodes = [_fwd_node([{"type": "text", "data": {"text": "转发文本 "}},
+                        {"type": "image", "data": {"file": "y.jpg", "url": "http://e/y"}}])]
+    adapter._call_action = _fwd_action({"F1": _fwd_resp(nodes)})
+    payload = _group_msg("fw8", "", at_self=True)
+    payload["message"] = [{"type": "at", "data": {"qq": "111"}}, _forward_seg("F1")]
+    _run(adapter._handle_inbound_message(payload))
+    event = adapter.handle_message.call_args.args[0]
+    # Forward block lands in the trigger BODY; image attached + labeled.
+    assert "【合并转发消息" in event.text
+    assert "转发文本" in event.text
+    assert "[输入图片1]" in event.text
+    assert event.media_urls == ["/cache/f.jpg"]
+
+
+def test_forward_in_observe_background():
+    adapter = _observe_adapter()
+    adapter._resolve_image = AsyncMock(return_value="/cache/ob.jpg")
+    nodes = [_fwd_node([{"type": "text", "data": {"text": "背景转发 "}},
+                        {"type": "image", "data": {"file": "z.jpg", "url": "http://e/z"}}])]
+    adapter._call_action = _fwd_action({"F1": _fwd_resp(nodes)})
+    payload = _group_msg("fw9", "", at_self=False)
+    payload["message"] = [_forward_seg("F1")]
+    _run(adapter._handle_inbound_message(payload))  # no @ → observed
+    line, imgs = adapter._observed["group:5"][0]
+    assert "【合并转发消息" in line and "背景转发" in line
+    assert len(imgs) == 1 and imgs[0].path == "/cache/ob.jpg"  # captured, NOT attached
+
+
+def test_forward_files_voice_name_only_in_background():
+    adapter = _observe_adapter()
+    adapter._resolve_file = AsyncMock(return_value="/should/not/be/called")
+    adapter._resolve_record = AsyncMock(return_value="/should/not/be/called")
+    nodes = [_fwd_node([
+        {"type": "text", "data": {"text": "看附件 "}},
+        {"type": "file", "data": {"file": "x.pdf", "name": "资料.pdf"}},
+        {"type": "record", "data": {"file": "v.amr"}},
+    ])]
+    adapter._call_action = _fwd_action({"F1": _fwd_resp(nodes)})
+    payload = _group_msg("fw10", "", at_self=False)
+    payload["message"] = [_forward_seg("F1")]
+    _run(adapter._handle_inbound_message(payload))
+    line, _ = adapter._observed["group:5"][0]
+    assert "[文件:资料.pdf]" in line and "[语音]" in line
+    adapter._resolve_file.assert_not_awaited()
+    adapter._resolve_record.assert_not_awaited()
+
+
+def test_forward_files_downloaded_in_quote():
+    adapter = _capture(_make_adapter())
+    adapter._resolve_file = AsyncMock(return_value="/cache/documents/doc_q_题.pdf")
+    nodes = [_fwd_node([{"type": "text", "data": {"text": "附件 "}},
+                        {"type": "file", "data": {"file": "x.pdf", "name": "题.pdf"}}])]
+    adapter._call_action = _fwd_action(
+        {"F1": _fwd_resp(nodes)},
+        get_msg={"status": "ok", "retcode": 0, "data": {
+            "user_id": 333, "sender": {"nickname": "Bob"}, "message": [_forward_seg("F1")]}},
+    )
+    _run(adapter._handle_inbound_message(_quoted_payload("fw11", "读下")))
+    ctx = adapter.handle_message.call_args.args[0].channel_context or ""
+    adapter._resolve_file.assert_awaited_once()
+    assert "[文件:题.pdf → /cache/documents/doc_q_题.pdf]" in ctx
+
+
+def test_forward_max_depth_stub(monkeypatch):
+    adapter = _capture(_make_adapter())
+    # Chain F1→F2→F3→F4; depth cap 3 means F4 is never fetched.
+    def nest(fid):
+        return _fwd_resp([_fwd_node([_forward_seg(fid)], "N", 1001)])
+    action = _fwd_action(
+        {"F1": nest("F2"), "F2": nest("F3"), "F3": nest("F4"), "F4": _fwd_resp([_fwd_node("x")])},
+        get_msg={"status": "ok", "retcode": 0, "data": {
+            "user_id": 333, "sender": {"nickname": "Bob"}, "message": [_forward_seg("F1")]}},
+    )
+    adapter._call_action = action
+    _run(adapter._handle_inbound_message(_quoted_payload("fw12", "看")))
+    ctx = adapter.handle_message.call_args.args[0].channel_context or ""
+    assert "max_depth" in ctx
+    fetched = {str(c.args[1].get("id")) for c in action.await_args_list
+               if c.args[0] == "get_forward_msg"}
+    assert "F4" not in fetched
+    assert len(fetched) == 3
+
+
+def test_forward_cache_ttl_expires(monkeypatch):
+    adapter = _capture(_make_adapter())
+    nodes = [_fwd_node("x", "N", 1001)]
+    action = _fwd_action({"F1": _fwd_resp(nodes)})
+    adapter._call_action = action
+    # First fetch populates the cache, then force the entry to look expired.
+    _run(adapter._fetch_forward_messages("F1"))
+    for ent in adapter._forward_cache.values():
+        ent.fetched_at -= (_mod._FORWARD_CACHE_TTL + 10)
+    _run(adapter._fetch_forward_messages("F1"))
+    fetches = [c for c in action.await_args_list if c.args[0] == "get_forward_msg"]
+    assert len(fetches) == 2  # refetched after TTL
+
+
+def test_forward_malformed_nodes_skipped():
+    adapter = _capture(_make_adapter())
+    nodes = [
+        {"content": "not-a-list", "time": 1785315460},   # no sender, str content
+        {"sender": {}, "content": [{"type": "text", "data": {"text": "ok"}}]},  # empty sender
+        "garbage-node",                                    # not a dict
+    ]
+    adapter._call_action = _fwd_action(
+        {"F1": _fwd_resp(nodes)},
+        get_msg={"status": "ok", "retcode": 0, "data": {
+            "user_id": 333, "sender": {"nickname": "Bob"}, "message": [_forward_seg("F1")]}},
+    )
+    _run(adapter._handle_inbound_message(_quoted_payload("fw13", "看")))
+    ctx = adapter.handle_message.call_args.args[0].channel_context or ""
+    assert "未知" in ctx  # fallback sender
+    assert "ok" in ctx
+    adapter.handle_message.assert_awaited_once()  # no crash
+
+
+def test_forward_mixed_text_and_nested_is_list():
+    adapter = _capture(_make_adapter())
+    nodes = [_fwd_node([
+        {"type": "text", "data": {"text": "附带的话 "}},
+        _forward_seg("F2"),
+    ])]
+    adapter._call_action = _fwd_action(
+        {"F1": _fwd_resp(nodes), "F2": _fwd_resp([_fwd_node("内层", "In", 2001)])},
+        get_msg={"status": "ok", "retcode": 0, "data": {
+            "user_id": 333, "sender": {"nickname": "Bob"}, "message": [_forward_seg("F1")]}},
+    )
+    _run(adapter._handle_inbound_message(_quoted_payload("fw14", "看")))
+    ctx = adapter.handle_message.call_args.args[0].channel_context or ""
+    # Parse the JSON from the fence and assert content is a mixed list.
+    import json as _json, re as _re
+    m = _re.search(r"```json\n(\[.*?\])\n```", ctx, _re.DOTALL)
+    assert m, ctx
+    tree = _json.loads(m.group(1))
+    content = tree[0]["content"]
+    assert isinstance(content, list)
+    assert any(isinstance(p, str) and "附带的话" in p for p in content)
+    assert any(isinstance(p, dict) and "forward" in p for p in content)
