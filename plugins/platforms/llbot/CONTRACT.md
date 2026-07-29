@@ -125,6 +125,20 @@ hermes gateway restart
 和 llbot 媒体分支相邻。**解法：两个独立 `if platform == X:` 分支都保留**，各带自己的 chunk 循环 + return。
 **推送**：rebase 改写 SHA → 推 fork 需 `git push --force-with-lease=main:<fork当前SHA> <fork-url> main`。
 
+### 推 fork（脚本化，推荐）
+PAT 存于 **`.env.fork-push`**（已 gitignore，**永不提交**）：
+```bash
+FORK_PUSH_TOKEN=ghp_xxx
+FORK_PUSH_USER=cxnaive
+```
+推送一律跑脚本（自动 force-with-lease 对准 fork 当前 main，防误覆盖；rebase 改写 SHA 后也安全）：
+```bash
+./scripts/push-fork.sh          # main → fork
+./scripts/push-fork.sh <分支>   # 指定分支
+```
+**别把 PAT 粘到命令行**（会留在 shell history）；脚本从文件读，不落 history。PAT 泄露 → 立即在
+GitHub → Settings → Developer settings → Tokens 撤销并换新的。
+
 ---
 
 ## 6. 改动记录（llbot 提交链，最新在前）
