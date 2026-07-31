@@ -95,6 +95,28 @@ def _load_openai_config() -> Dict[str, Any]:
         return {}
 
 
+def _resolve_client_kwargs() -> Dict[str, str]:
+    """Build kwargs for ``openai.OpenAI(**...)`` (base_url + api_key).
+
+    Precedence (first hit wins): ``image_gen.openai.base_url`` / ``.api_key``
+    in config.yaml → ``OPENAI_BASE_URL`` / ``OPENAI_API_KEY`` env → omit (the
+    SDK falls back to its own env / official default). Reading base_url from
+    config lets the image backend use a relay (e.g. uuapi.cc) WITHOUT exporting
+    a global ``OPENAI_BASE_URL`` that other OpenAI-env consumers (auxiliary
+    client, etc.) would mis-read as a chat endpoint override.
+    """
+    section = _load_openai_config()
+    sub = section.get("openai") if isinstance(section.get("openai"), dict) else {}
+    kwargs: Dict[str, str] = {}
+    base_url = (sub.get("base_url") or os.environ.get("OPENAI_BASE_URL") or "").strip()
+    if base_url:
+        kwargs["base_url"] = base_url
+    api_key = (sub.get("api_key") or os.environ.get("OPENAI_API_KEY") or "").strip()
+    if api_key:
+        kwargs["api_key"] = api_key
+    return kwargs
+
+
 def _resolve_model() -> Tuple[str, Dict[str, Any]]:
     """Decide which tier to use and return ``(model_id, meta)``."""
     env_override = os.environ.get("OPENAI_IMAGE_MODEL")
@@ -282,7 +304,7 @@ class OpenAIImageGenProvider(ImageGenProvider):
         is_edit = bool(sources)
         modality = "image" if is_edit else "text"
 
-        client = openai.OpenAI(api_key=api_key)
+        client = openai.OpenAI(**_resolve_client_kwargs())
 
         if is_edit:
             # images.edit() expects file-like objects. Download/read each

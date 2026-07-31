@@ -155,8 +155,18 @@ hermes gateway restart
 config 的默认档。改动链：`IMAGE_GENERATE_SCHEMA`（tools/image_generation_tool.py）→ `_handle_image_generate`
 → `_dispatch_to_plugin_provider(quality=…)` → `plugins/image_gen/openai` 的 `generate()`（读 `quality` kwarg
 覆盖 tier；同一底层模型 `gpt-image-2`，只改 `quality` 旋钮）。省略 quality → 走 `image_gen.model` 默认档。
+openai provider 的 client 用 `_resolve_client_kwargs()` 显式传 `base_url`/`api_key`（`image_gen.openai.*`
+config 优先 → env → 省略）；**base_url 放 config 而非全局 `OPENAI_BASE_URL`**——后者会被 auxiliary_client
+误判为 chat 端点覆盖并告警。
 测试：`tests/tools/test_image_generation*.py` + `tests/plugins/image_gen/test_openai_provider.py`。
-（当时的配置：uuapi.cc 中转，`OPENAI_API_KEY`/`OPENAI_BASE_URL` 在 `~/.hermes/.env`，默认档 medium。）
+（当时的配置：uuapi.cc 中转，`image_gen.openai.base_url` 在 config.yaml、`OPENAI_API_KEY` 在 `~/.hermes/.env`，默认档 medium。）
+
+### 附2：llbot 发图指引修正（adapter.py，本 fork 平台）
+`platform_hint`/`channel_prompt` 原先教 agent "用 send_message 工具 + MEDIA: 发图"，但 **`send_message`
+故意不注册为 agent 工具**（tools/send_message_tool.py:2167 注释）——agent 找不到只能 python 手搓（实测
+52.8s + 超时，图没发出去）。已改为：**回复文本里写 `MEDIA:<本地路径>` 即自动作为附件发出**；`image_generate`
+生成的图 gateway 自动附上（run.py:23115，正常回复即可，别 python/HTTP 手搓）。channel_prompt 保留 chat_id。
+测试断言同步更新（`tests/gateway/test_llbot_adapter.py` 的 channel_prompt/poke 用例）。
 
 ### 推 fork（脚本化，推荐）
 PAT 存于 **`.env.fork-push`**（已 gitignore，**永不提交**）：
@@ -178,6 +188,7 @@ GitHub → Settings → Developer settings → Tokens 撤销并换新的。
 
 | 提交 | 改动 |
 |---|---|
+| 发图指引+base_url | llbot 发图指引去 send_message（改 MEDIA: 自动附着）；openai image base_url 挪 config（消 OPENAI_BASE_URL 警告）（SHA 见 `git log`） |
 | 图像 quality 自控 | `image_generate` 加可选 `quality`（low/medium/high）参数；openai provider 读 kwarg 覆盖档（本 fork 私有，上游共享文件，rebase 冲突点；SHA 见 `git log`） |
 | 合并转发解析 | 合并转发（含嵌套）解析成 JSON 围栏；own/引用下载文件给路径，背景只给名；图片沿用 输入图片/背景图 编号（本次工作，SHA 见 `git log`） |
 | `13f526219` | 群文件走 `get_group_file_url` 下载（`get_file` 不支持群文件 elementType 3）；own 触发 + 引用文件/语音给缓存路径（私聊仍走 `get_file`，群/私已区分） |

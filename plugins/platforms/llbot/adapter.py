@@ -895,10 +895,9 @@ class LLBotAdapter(BasePlatformAdapter):
             media_types=media_types,
             reply_to_message_id=parsed.reply_to_message_id,
             reply_to_text=None,  # quote rendered as a 【】 fence in channel_context
-            # Inject the current chat id + speaker so the agent can target
-            # THIS conversation with send_message (e.g. to send images back)
-            # without asking the user. core's send_message recognizes the
-            # "llbot:<chat_id>" target format.
+            # channel_prompt carries the per-chat reply/media pointer (see
+            # _build_channel_prompt): plain text goes to this chat, MEDIA:<path>
+            # attaches a local file. (send_message is NOT an agent tool here.)
             channel_prompt=self._build_channel_prompt(chat_id, chat_type),
             channel_context=observed_context or None,
             raw_message=payload,
@@ -1141,13 +1140,16 @@ class LLBotAdapter(BasePlatformAdapter):
         Depends only on ``chat_id`` + ``chat_type`` (both fixed for a given
         chat), so it's byte-identical every turn — no per-speaker data, which
         would change each turn and defeat any caching. Carries only the
-        concrete send_message target (embeds chat_id) + the concise group/DM
-        delta. The speaker is already named in the message body and the observe
-        lines, so it isn't duplicated here. Ephemeral (re-injected each turn,
-        not cached like ``platform_hint``) → kept lean; tutorials live in the
-        stable ``platform_hint``.
+        concise group/DM delta + the media-send pointer. The speaker is already
+        named in the message body and the observe lines, so it isn't duplicated
+        here. Ephemeral (re-injected each turn, not cached like
+        ``platform_hint``) → kept lean; tutorials live in the stable
+        ``platform_hint``.
         """
-        base = f"Reply via send_message(target='llbot:{chat_id}', ...)."
+        base = (
+            f"Reply in plain text — it goes to this chat ({chat_id}). "
+            "To attach an image/file, add MEDIA:<local_path> in your reply."
+        )
         if chat_type == "group":
             return base + (
                 " [GROUP] You only see @mentions. Lines above (if any) are "
@@ -2382,12 +2384,14 @@ def register(ctx):
             "its marker shows a cached local path (`[文件:name → <path>]` / "
             "`[语音: <音频已缓存…> <path>]`) — read that path with read_file "
             "to get its content. "
-            "When poked you receive \"[戳一戳] … 戳了戳你\". To reply or send "
-            "media, use the send_message tool with this chat's target "
-            "('llbot:group:<id>' or 'llbot:private:<qq>', supplied per "
-            "message); put MEDIA:<local_path> in the message for an "
-            "image/voice/file attachment. If a message doesn't warrant a "
-            "reply, output exactly `NO_REPLY` and nothing else — it is "
-            "silently dropped. Group-vs-DM specifics are appended per message."
+            "When poked you receive \"[戳一戳] … 戳了戳你\". Reply in plain "
+            "text — it goes straight to this chat. To send an image/voice/file "
+            "attachment, include MEDIA:<local_path> in your reply text and the "
+            "platform delivers it as a native attachment (do NOT shell out or "
+            "use python/HTTP to post media — the MEDIA: path is enough). An "
+            "image you create with image_generate is attached automatically — "
+            "just reply normally. If a message doesn't warrant a reply, output "
+            "exactly `NO_REPLY` and nothing else — it is silently dropped. "
+            "Group-vs-DM specifics are appended per message."
         ),
     )
