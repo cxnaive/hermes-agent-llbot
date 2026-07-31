@@ -398,8 +398,9 @@ def test_poke_drains_observe_like_a_trigger():
     assert event.channel_context is not None
     assert "[now:" in event.channel_context          # [now:] marker (trigger time)
     assert "闲聊" in event.channel_context            # drained observed chatter
-    assert event.channel_prompt is not None          # send_message hint set
-    assert "llbot:group:5" in event.channel_prompt
+    assert event.channel_prompt is not None          # reply/media hint set
+    assert "group:5" in event.channel_prompt
+    assert "MEDIA:" in event.channel_prompt
     assert not adapter._observed.get("group:5")      # buffer cleared by drain
 
 
@@ -830,19 +831,18 @@ def test_reply_quote_get_msg_nonok_is_graceful():
 
 
 def test_channel_prompt_injects_current_chat_id_for_targeting():
-    # The agent must know its current chat id so it can fill send_message's
-    # `target` to reply with media, without asking the user.
+    # channel_prompt tells the agent its reply goes to THIS chat (chat_id) and
+    # how to attach media (MEDIA:<path>) — send_message is NOT an agent tool.
     adapter = _capture(_make_adapter())
     _run(adapter._handle_inbound_message(_group_msg("cp1", "hi", at_self=True)))
     event = adapter.handle_message.call_args.args[0]
     assert event.channel_prompt is not None
-    assert "llbot:group:5" in event.channel_prompt   # chat_id target
+    assert "group:5" in event.channel_prompt         # chat_id
+    assert "MEDIA:" in event.channel_prompt           # media-attach pointer
+    assert "send_message" not in event.channel_prompt  # not an agent tool here
     # No per-speaker data — channel_prompt is stable across turns/speakers.
     assert "Alice" not in event.channel_prompt
     assert "QQ 222" not in event.channel_prompt
-    # Kept short — the send_message tutorial lives in the static platform_hint,
-    # not repeated in the per-turn channel_prompt.
-    assert "MEDIA:" not in event.channel_prompt
 
 
 def test_channel_prompt_for_dm_includes_private_chat_id():
@@ -855,7 +855,7 @@ def test_channel_prompt_for_dm_includes_private_chat_id():
     _run(adapter._handle_inbound_message(payload))
     event = adapter.handle_message.call_args.args[0]
     assert "private:7" in event.channel_prompt
-    assert "llbot:private:7" in event.channel_prompt
+    assert "MEDIA:" in event.channel_prompt
 
 
 def test_channel_prompt_differs_for_group_vs_dm():
