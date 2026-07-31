@@ -3394,13 +3394,25 @@ class BasePlatformAdapter(ABC):
         """
         self._session_store = session_store
     
-    def _history_media_paths_for_session(self, session_key: str) -> Optional[set]:
-        """Return media paths already delivered in prior turns of this session.
+    def _history_media_paths_for_session(
+        self, session_key: str, *, current_turn_only: bool = False
+    ) -> Optional[set]:
+        """Return media paths to dedup against for this session.
 
-        Loads the persisted transcript, drops the most recent assistant entry
-        (which belongs to the current response), and scans the remaining history
-        for MEDIA: tags and image_generate JSON payloads.  Used to prevent the
-        model from re-delivering the same file when it echoes an old MEDIA tag.
+        Loads the persisted transcript and scans it for MEDIA: tags and
+        image_generate JSON payloads.
+
+        ``current_turn_only=False`` (legacy): scan ALL prior turns (everything
+        except the current response's own assistant entry). This permanently
+        blacklists a path once it appears in any earlier assistant message —
+        including turns whose send failed or was interrupted, so re-sending
+        that file later is silently swallowed.
+
+        ``current_turn_only=True``: scan ONLY the current turn — the trailing
+        run of assistant/tool messages at the end of the transcript (walking
+        back from the end until a user/session_meta/system row). Dedup then
+        only collapses a repeat WITHIN one reply, while re-sending a file in a
+        later turn is allowed.
         """
         store = getattr(self, "_session_store", None)
         if not store:
@@ -3418,9 +3430,34 @@ class BasePlatformAdapter(ABC):
             return None
         if not transcript:
             return None
-        # Exclude the current turn's assistant message, which has already been
-        # persisted by the time we reach delivery but must not be treated as
-        # "history" for dedup purposes.
+        # Avoid circular import: gateway.run already imports this module.
+        from gateway.run import _collect_history_media_paths
+        if current_turn_only:
+            # The current turn is the trailing run of assistant/tool rows at
+            # the end of the transcript. Everything before the last user (or
+            # session boundary) row is a PRIOR turn — excluded from dedup so a
+            # re-send in a later turn isn't swallowed.
+            current: List[Dict[str, Any]] = []
+            for msg in reversed(transcript):
+                if msg.get("role") in ("assistant", "tool", "function"):
+                    current.append(msg)
+                else:
+                    break
+            current.reverse()
+            # CRITICAL: drop the CURRENT response's own assistant entry. By
+            # delivery time the final assistant message is already persisted, so
+            # it sits at the END of this trailing run — and its MEDIA tags are
+            # the very files we're about to send. Leaving it in would make dedup
+            # treat the reply's own attachments as "already sent" and strip them.
+            for msg in reversed(current):
+                if msg.get("role") == "assistant":
+                    current.remove(msg)
+                    break
+            if not current:
+                return None
+            return _collect_history_media_paths(current)
+        # Legacy full-history scope: exclude the current turn's assistant
+        # message (already persisted by delivery time), scan the rest.
         history = list(transcript)
         for msg in reversed(history):
             if msg.get("role") == "assistant":
@@ -3428,8 +3465,6 @@ class BasePlatformAdapter(ABC):
                 break
         if not history:
             return None
-        # Avoid circular import: gateway.run already imports this module.
-        from gateway.run import _collect_history_media_paths
         return _collect_history_media_paths(history)
 
     @abstractmethod
@@ -5714,11 +5749,14 @@ class BasePlatformAdapter(ABC):
                 media_files, response = self.extract_media(response)
                 media_files = self.filter_media_delivery_paths(media_files)
 
-                # Deduplicate against media already delivered in prior turns.
-                # The model may echo a previous MEDIA: tag or bare file path in
-                # a later response; without this guard the same file is sent
-                # repeatedly.
-                _history_media_paths = self._history_media_paths_for_session(session_key)
+                # Deduplicate WITHIN the current turn only: a reply that repeats
+                # one MEDIA: tag sends it once. Scope is the current turn (not the
+                # whole session) so re-sending a file in a LATER turn still works —
+                # a failed/interrupted earlier send must not permanently blacklist
+                # the path (fixes silent no-delivery on re-send).
+                _history_media_paths = self._history_media_paths_for_session(
+                    session_key, current_turn_only=True
+                )
                 if _history_media_paths:
                     media_files = [
                         (path, is_voice)

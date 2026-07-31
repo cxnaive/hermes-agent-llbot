@@ -26,6 +26,9 @@ def _clean_llbot_env(monkeypatch):
     for key in (
         "LLBOT_WS_URL", "LLBOT_ACCESS_TOKEN", "LLBOT_REQUIRE_MENTION",
         "LLBOT_HOME_CHANNEL", "LLBOT_ALLOWED_USERS", "LLBOT_ALLOW_ALL_USERS",
+        # Loaded from ~/.hermes/.env on some import paths; left set they make
+        # the shared-media passthrough tests see a phantom config.
+        "LLBOT_SHARED_MEDIA_HOST_DIR", "LLBOT_SHARED_MEDIA_CONTAINER_DIR",
     ):
         monkeypatch.delenv(key, raising=False)
 

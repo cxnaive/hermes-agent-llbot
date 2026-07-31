@@ -126,3 +126,85 @@ class TestHistoryMediaDedupe:
 
     def test_empty_history_empty_set(self):
         assert _collect_history_media_paths([]) == set()
+
+
+class TestCurrentTurnOnlyDedupe:
+    """`_history_media_paths_for_session(current_turn_only=True)` scopes dedup to
+    the trailing assistant/tool run, so a cross-turn re-send is NOT swallowed."""
+
+    class _FakeStore:
+        def __init__(self, transcript):
+            self._t = transcript
+
+        def load_transcript(self, _sid):
+            return self._t
+
+    def _adapter(self, transcript):
+        # Call the unbound method with a bare stand-in for `self` — the method
+        # only reads `self._session_store`, so no real adapter is needed.
+        fn = BasePlatformAdapter._history_media_paths_for_session
+        stand_in = type("StandIn", (), {"_session_store": self._FakeStore(transcript)})()
+        return lambda key, **kw: fn(stand_in, key, **kw)
+
+    def test_current_turn_only_excludes_prior_turns(self):
+        # The current response's OWN assistant entry is excluded (its MEDIA tags
+        # are what we're about to send — they must NOT be deduped away). And a
+        # path that appears ONLY in a prior turn is also excluded.
+        transcript = [
+            {"role": "user", "content": "draw"},
+            {"role": "assistant", "content": "here MEDIA:/tmp/old.png"},
+            {"role": "user", "content": "send it again"},
+            {"role": "assistant", "content": "ok MEDIA:/tmp/old.png"},
+        ]
+        adapter = self._adapter(transcript)
+        paths = adapter("k", current_turn_only=True)
+        # old.png is ONLY in the current reply (excluded) → dedup set is empty.
+        assert paths is None or "/tmp/old.png" not in (paths or set())
+        # A path that appears ONLY in the prior turn is likewise excluded:
+        transcript2 = [
+            {"role": "user", "content": "draw"},
+            {"role": "assistant", "content": "here MEDIA:/tmp/old.png"},
+            {"role": "user", "content": "again"},
+            {"role": "assistant", "content": "sure thing"},
+        ]
+        adapter2 = self._adapter(transcript2)
+        paths2 = adapter2("k", current_turn_only=True)
+        assert paths2 is None or "/tmp/old.png" not in (paths2 or set())
+
+    def test_current_turn_collapses_repeat_within_one_reply(self):
+        # A path tagged in an EARLIER assistant/tool row of the SAME turn (not
+        # the final reply) IS deduped — so the delivery filter sends it once.
+        transcript = [
+            {"role": "user", "content": "draw"},
+            {"role": "assistant", "content": "MEDIA:/tmp/x.png"},
+            {"role": "tool", "content": "MEDIA:/tmp/x.png"},
+            {"role": "assistant", "content": "done"},
+        ]
+        adapter = self._adapter(transcript)
+        paths = adapter("k", current_turn_only=True)
+        assert "/tmp/x.png" in paths
+
+    def test_legacy_full_history_still_default(self):
+        # current_turn_only=False keeps the old behavior: prior-turn tags are
+        # collected (everything except the final assistant row).
+        transcript = [
+            {"role": "user", "content": "draw"},
+            {"role": "assistant", "content": "here MEDIA:/tmp/old.png"},
+            {"role": "user", "content": "again"},
+            {"role": "assistant", "content": "sure"},
+        ]
+        adapter = self._adapter(transcript)
+        paths = adapter("k")
+        assert "/tmp/old.png" in paths
+
+    def test_trailing_run_stops_at_user_boundary(self):
+        # A tool row from an EARLIER turn must not bleed into the current turn:
+        # the trailing run starts after the most recent user message.
+        transcript = [
+            {"role": "assistant", "content": "MEDIA:/tmp/very_old.png"},
+            {"role": "user", "content": "next"},
+            {"role": "assistant", "content": "no media here"},
+        ]
+        adapter = self._adapter(transcript)
+        paths = adapter("k", current_turn_only=True)
+        assert paths is None or "/tmp/very_old.png" not in (paths or set())

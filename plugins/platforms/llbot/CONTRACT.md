@@ -141,13 +141,16 @@ hermes config migrate                        # 若有版本迁移（启动时也
 hermes gateway restart
 ```
 **冲突提示**：llbot 提交几乎只碰 `plugins/platforms/llbot/*` + `plugins/memory/session-key-*`（上游不碰）。
-已知的两处**上游共享文件**改动（rebase 时可能撞上游）：
+已知的**上游共享文件**改动（rebase 时可能撞上游）：
 1. `tools/send_message_tool.py` —— llbot 媒体分支；上游会加别的平台（slack/whatsapp…）分支与之相邻。
    **解法：两个独立 `if platform == X:` 分支都保留**，各带自己的 chunk 循环 + return。
 2. `tools/image_generation_tool.py` + `plugins/image_gen/openai/__init__.py` —— 图像生成 `quality`
    自控（见下）。上游若改图像工具的 schema / dispatch / openai provider 同一处会撞。
    **解法：保留我方 `quality` 透传链**（schema 字段 → `_handle_image_generate` → `_dispatch_to_plugin_provider`
    → openai `generate()` 读 kwarg），同时接纳上游的新增；三处是一条链，缺一环就断。
+3. `gateway/platforms/base.py` + `gateway/run.py` —— media 去重窗口收窄（见附3）。上游常动 media 发送管线，
+   撞 `_history_media_paths_for_session` / 发送 handler 的去重段。**解法：保留我方 `current_turn_only=True`
+   收窄逻辑**（去重只限当前 turn），接纳上游对 media 管线的其它改动。
 **推送**：rebase 改写 SHA → 推 fork 需 `git push --force-with-lease=main:<fork当前SHA> <fork-url> main`。
 
 ### 附：图像生成 quality 自控（本 fork 私有改动，非 llbot 平台功能）
@@ -167,6 +170,18 @@ config 优先 → env → 省略）；**base_url 放 config 而非全局 `OPENAI
 52.8s + 超时，图没发出去）。已改为：**回复文本里写 `MEDIA:<本地路径>` 即自动作为附件发出**；`image_generate`
 生成的图 gateway 自动附上（run.py:23115，正常回复即可，别 python/HTTP 手搓）。channel_prompt 保留 chat_id。
 测试断言同步更新（`tests/gateway/test_llbot_adapter.py` 的 channel_prompt/poke 用例）。
+
+### 附3：media 跨-turn 去重收窄（gateway 共享文件，上游、rebase 冲突点）
+群里 agent 在最终回复正确写了 `MEDIA:/tmp/arona_jk.jpg`，图却反复发不出、标签漏成文字。根因：发送主路径
+（`gateway/platforms/base.py` 发送 handler）`_history_media_paths_for_session` 做**跨-turn 去重**——扫整个
+session 历史里 assistant 写过的 `MEDIA:<path>`，**不管那次图实际发没发出去**。agent 某次写了 MEDIA 但发送
+失败/被打断，该路径就进黑名单；之后重发同图（合理需求）被一律滤掉，只发剥掉标签后的文字（稳定复现）。
+**修法（选 B）**：给 `_history_media_paths_for_session` 加 `current_turn_only=True`——只去重 transcript 末尾
+**连续 assistant/tool 块**（当前 turn），且**排除当前回复自己的那条 assistant**（关键：delivery 时最终回复已
+持久化在 transcript 末尾，不排除会把它自己写的 MEDIA 当成"已发送"滤掉——这正是 jk 图两次没发的真正根因）。
+跨-turn 重发放行；当前 turn 内重复贴同图仍只发一次。不加 env 开关（用户拍板）。run.py:23115 auto-append
+路径保持全历史去重（它只补 agent 漏写的 producer-tool 图，不拦显式重发），已加注释标注区别。
+测试：`tests/gateway/test_media_spaced_paths_and_history_dedupe.py`（+4 用例）。
 
 ### 推 fork（脚本化，推荐）
 PAT 存于 **`.env.fork-push`**（已 gitignore，**永不提交**）：
@@ -188,6 +203,7 @@ GitHub → Settings → Developer settings → Tokens 撤销并换新的。
 
 | 提交 | 改动 |
 |---|---|
+| media 去重收窄 | 跨-turn media 去重收窄到当前 turn（修"重发同图被吞"）；`_history_media_paths_for_session(current_turn_only=True)`（上游 gateway 文件，rebase 冲突点；SHA 见 `git log`） |
 | 发图指引+base_url | llbot 发图指引去 send_message（改 MEDIA: 自动附着）；openai image base_url 挪 config（消 OPENAI_BASE_URL 警告）（SHA 见 `git log`） |
 | 图像 quality 自控 | `image_generate` 加可选 `quality`（low/medium/high）参数；openai provider 读 kwarg 覆盖档（本 fork 私有，上游共享文件，rebase 冲突点；SHA 见 `git log`） |
 | 合并转发解析 | 合并转发（含嵌套）解析成 JSON 围栏；own/引用下载文件给路径，背景只给名；图片沿用 输入图片/背景图 编号（本次工作，SHA 见 `git log`） |
