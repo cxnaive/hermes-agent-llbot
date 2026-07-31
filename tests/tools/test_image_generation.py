@@ -349,14 +349,22 @@ class TestRegistryIntegration:
     def test_schema_exposes_expected_agent_params(self, image_tool):
         """The agent-facing schema exposes the unified text+image surface:
         prompt (required), aspect_ratio, the image-to-image inputs
-        image_url + reference_image_urls, and the opt-in upscale pass. Model
-        selection stays a user-level config choice, never an agent-level arg."""
+        image_url + reference_image_urls, an optional per-call `quality`
+        tier override, and the opt-in upscale pass. Model selection stays a
+        user-level config choice, never an agent-level arg; `quality` only
+        picks a tier within the active model."""
         props = image_tool.IMAGE_GENERATE_SCHEMA["parameters"]["properties"]
         assert set(props.keys()) == {
-            "prompt", "aspect_ratio", "image_url", "reference_image_urls",
-            "upscale",
+            "prompt", "aspect_ratio", "quality", "image_url",
+            "reference_image_urls", "upscale",
         }
         assert image_tool.IMAGE_GENERATE_SCHEMA["parameters"]["required"] == ["prompt"]
+
+    def test_quality_enum_is_three_tiers_and_optional(self, image_tool):
+        """`quality` is an optional low/medium/high enum (not required)."""
+        q = image_tool.IMAGE_GENERATE_SCHEMA["parameters"]["properties"]["quality"]
+        assert set(q["enum"]) == {"low", "medium", "high"}
+        assert "quality" not in image_tool.IMAGE_GENERATE_SCHEMA["parameters"]["required"]
 
     def test_aspect_ratio_enum_is_three_values(self, image_tool):
         enum = image_tool.IMAGE_GENERATE_SCHEMA["parameters"]["properties"]["aspect_ratio"]["enum"]

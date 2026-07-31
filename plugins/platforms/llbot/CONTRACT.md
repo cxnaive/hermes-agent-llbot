@@ -140,10 +140,23 @@ find . -name __pycache__ -type d -prune -exec rm -rf {} +
 hermes config migrate                        # 若有版本迁移（启动时也会自动提示）
 hermes gateway restart
 ```
-**冲突提示**：llbot 提交几乎只碰 `plugins/platforms/llbot/*` + `plugins/memory/session-key-*`（上游不碰），
-唯一反复冲突点是 `tools/send_message_tool.py`——上游会加别的平台（slack/whatsapp…）媒体分支，
-和 llbot 媒体分支相邻。**解法：两个独立 `if platform == X:` 分支都保留**，各带自己的 chunk 循环 + return。
+**冲突提示**：llbot 提交几乎只碰 `plugins/platforms/llbot/*` + `plugins/memory/session-key-*`（上游不碰）。
+已知的两处**上游共享文件**改动（rebase 时可能撞上游）：
+1. `tools/send_message_tool.py` —— llbot 媒体分支；上游会加别的平台（slack/whatsapp…）分支与之相邻。
+   **解法：两个独立 `if platform == X:` 分支都保留**，各带自己的 chunk 循环 + return。
+2. `tools/image_generation_tool.py` + `plugins/image_gen/openai/__init__.py` —— 图像生成 `quality`
+   自控（见下）。上游若改图像工具的 schema / dispatch / openai provider 同一处会撞。
+   **解法：保留我方 `quality` 透传链**（schema 字段 → `_handle_image_generate` → `_dispatch_to_plugin_provider`
+   → openai `generate()` 读 kwarg），同时接纳上游的新增；三处是一条链，缺一环就断。
 **推送**：rebase 改写 SHA → 推 fork 需 `git push --force-with-lease=main:<fork当前SHA> <fork-url> main`。
+
+### 附：图像生成 quality 自控（本 fork 私有改动，非 llbot 平台功能）
+给 agent 的 `image_generate` 工具加了可选 `quality`（low/medium/high）参数，可在调用时覆盖
+config 的默认档。改动链：`IMAGE_GENERATE_SCHEMA`（tools/image_generation_tool.py）→ `_handle_image_generate`
+→ `_dispatch_to_plugin_provider(quality=…)` → `plugins/image_gen/openai` 的 `generate()`（读 `quality` kwarg
+覆盖 tier；同一底层模型 `gpt-image-2`，只改 `quality` 旋钮）。省略 quality → 走 `image_gen.model` 默认档。
+测试：`tests/tools/test_image_generation*.py` + `tests/plugins/image_gen/test_openai_provider.py`。
+（当时的配置：uuapi.cc 中转，`OPENAI_API_KEY`/`OPENAI_BASE_URL` 在 `~/.hermes/.env`，默认档 medium。）
 
 ### 推 fork（脚本化，推荐）
 PAT 存于 **`.env.fork-push`**（已 gitignore，**永不提交**）：
@@ -165,6 +178,7 @@ GitHub → Settings → Developer settings → Tokens 撤销并换新的。
 
 | 提交 | 改动 |
 |---|---|
+| 图像 quality 自控 | `image_generate` 加可选 `quality`（low/medium/high）参数；openai provider 读 kwarg 覆盖档（本 fork 私有，上游共享文件，rebase 冲突点；SHA 见 `git log`） |
 | 合并转发解析 | 合并转发（含嵌套）解析成 JSON 围栏；own/引用下载文件给路径，背景只给名；图片沿用 输入图片/背景图 编号（本次工作，SHA 见 `git log`） |
 | `13f526219` | 群文件走 `get_group_file_url` 下载（`get_file` 不支持群文件 elementType 3）；own 触发 + 引用文件/语音给缓存路径（私聊仍走 `get_file`，群/私已区分） |
 | `efb9eebc9` | fork 推送脚本化（`.env.fork-push` + `scripts/push-fork.sh`，gitignored PAT） |

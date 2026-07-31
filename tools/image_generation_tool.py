@@ -1550,14 +1550,17 @@ IMAGE_GENERATE_SCHEMA = {
         "model supports it. Pass `image_url` to edit that image; add "
         "`reference_image_urls` for style/composition references; omit both "
         "for text-to-image. The underlying backend (FAL, OpenAI, xAI, etc.) "
-        "and model are user-configured and not selectable by the agent. "
-        "Returns the result in the `image` field — either a URL or an absolute "
-        "file path. To show it to the user, reference that path/URL in your "
-        "response using the file-delivery convention for the current platform "
-        "(your platform guidance describes how files are delivered here). When "
-        "the active terminal backend has a different filesystem, successful "
-        "local-file results may also include `agent_visible_image` for "
-        "follow-up terminal/file operations."
+        "and default model/quality are user-configured. When the backend "
+        "supports quality tiers, the optional `quality` argument lets you pick "
+        "a lower (faster/cheaper) or higher (slower/sharper) tier per call; "
+        "omit it to use the configured default. Returns the result in the "
+        "`image` field — either a URL or an absolute file path. To show it to "
+        "the user, reference that path/URL in your response using the "
+        "file-delivery convention for the current platform (your platform "
+        "guidance describes how files are delivered here). When the active "
+        "terminal backend has a different filesystem, successful local-file "
+        "results may also include `agent_visible_image` for follow-up "
+        "terminal/file operations."
     ),
     "parameters": {
         "type": "object",
@@ -1575,6 +1578,17 @@ IMAGE_GENERATE_SCHEMA = {
                 "enum": list(VALID_ASPECT_RATIOS),
                 "description": "The aspect ratio of the generated image. 'landscape' is 16:9 wide, 'portrait' is 16:9 tall, 'square' is 1:1.",
                 "default": DEFAULT_ASPECT_RATIO,
+            },
+            "quality": {
+                "type": "string",
+                "enum": ["low", "medium", "high"],
+                "description": (
+                    "Optional quality/speed tier for backends that expose tiers "
+                    "(e.g. OpenAI gpt-image). 'low' = fastest/cheapest draft, "
+                    "'medium' = balanced, 'high' = slowest/sharpest. Omit to use "
+                    "the configured default model/tier. Ignored by backends "
+                    "without tiers."
+                ),
             },
             "image_url": {
                 "type": "string",
@@ -1660,6 +1674,7 @@ def _dispatch_to_plugin_provider(
     image_url: Optional[str] = None,
     reference_image_urls: Optional[list] = None,
     upscale: Optional[bool] = None,
+    quality: Optional[str] = None,
 ):
     """Route the call to a plugin-registered provider when one is selected.
 
@@ -1726,6 +1741,10 @@ def _dispatch_to_plugin_provider(
     try:
         if configured_model:
             kwargs["model"] = configured_model
+        if quality:
+            # Per-call tier override; providers with tiers (e.g. OpenAI
+            # gpt-image) honor it, others ignore it via **kwargs.
+            kwargs["quality"] = quality
         if isinstance(image_url, str) and image_url.strip():
             kwargs["image_url"] = image_url.strip()
         norm_refs = None
@@ -1961,6 +1980,15 @@ def _handle_image_generate(args, **kw):
     upscale = args.get("upscale")
     if not isinstance(upscale, bool):
         upscale = None
+    # Optional per-call quality/speed tier (low/medium/high). Forwarded to the
+    # provider; backends without tiers ignore it. None = use configured default.
+    quality = args.get("quality")
+    if isinstance(quality, str):
+        quality = quality.strip().lower() or None
+        if quality not in ("low", "medium", "high"):
+            quality = None
+    else:
+        quality = None
     task_id = kw.get("task_id")
 
     # Terminal-backend confinement chokepoint: convert path-like sources to
@@ -1980,6 +2008,7 @@ def _handle_image_generate(args, **kw):
         image_url=image_url,
         reference_image_urls=reference_image_urls,
         upscale=upscale,
+        quality=quality,
     )
     if dispatched is not None:
         return _postprocess_image_generate_result(dispatched, task_id=task_id)

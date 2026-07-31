@@ -260,6 +260,16 @@ class OpenAIImageGenProvider(ImageGenProvider):
             )
 
         tier_id, meta = _resolve_model()
+        # Optional per-call quality override from the agent's image_generate
+        # `quality` argument (low/medium/high). Maps onto the same underlying
+        # gpt-image-2 model with a different `quality` knob — no model switch,
+        # so a configured default tier still applies when omitted.
+        q = kwargs.get("quality")
+        if isinstance(q, str):
+            q = q.strip().lower()
+            if q in ("low", "medium", "high"):
+                meta = {**meta, "quality": q}
+                tier_id = f"gpt-image-2-{q}"
         size = _SIZES.get(aspect, _SIZES["square"])
 
         # Collect source images (primary + references) for image-to-image.

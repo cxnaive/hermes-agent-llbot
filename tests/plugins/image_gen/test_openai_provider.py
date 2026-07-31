@@ -190,6 +190,33 @@ class TestGenerate:
         # Always the same underlying API model regardless of tier.
         assert fake_client.images.generate.call_args.kwargs["model"] == "gpt-image-2"
 
+    @pytest.mark.parametrize("q", ["low", "medium", "high"])
+    def test_quality_kwarg_overrides_configured_tier(self, provider, q):
+        """The agent's per-call `quality` arg overrides the configured default tier."""
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_response(b64=_b64_png())
+
+        with _patched_openai(fake_client):
+            result = provider.generate("a cat", quality=q)
+
+        assert result["success"] is True
+        assert result["quality"] == q
+        assert result["model"] == f"gpt-image-2-{q}"
+        # Same underlying API model, quality knob set to the override.
+        assert fake_client.images.generate.call_args.kwargs["quality"] == q
+        assert fake_client.images.generate.call_args.kwargs["model"] == "gpt-image-2"
+
+    def test_invalid_quality_kwarg_falls_back_to_default(self, provider):
+        """A bogus quality string is ignored — the configured default tier applies."""
+        fake_client = MagicMock()
+        fake_client.images.generate.return_value = _fake_response(b64=_b64_png())
+
+        with _patched_openai(fake_client):
+            result = provider.generate("a cat", quality="ultra")
+
+        assert result["quality"] == "medium"  # default, not "ultra"
+        assert fake_client.images.generate.call_args.kwargs["quality"] == "medium"
+
     @pytest.mark.parametrize("aspect,expected_size", [
         ("landscape", "1536x1024"),
         ("square", "1024x1024"),
