@@ -145,6 +145,13 @@ hermes gateway restart
 和 llbot 媒体分支相邻。**解法：两个独立 `if platform == X:` 分支都保留**，各带自己的 chunk 循环 + return。
 **推送**：rebase 改写 SHA → 推 fork 需 `git push --force-with-lease=main:<fork当前SHA> <fork-url> main`。
 
+### 附：llbot 发图指引修正（adapter.py，本 fork 平台）
+`platform_hint`/`channel_prompt` 原先教 agent "用 send_message 工具 + MEDIA: 发图"，但 **`send_message`
+故意不注册为 agent 工具**（tools/send_message_tool.py 注释）——agent 找不到只能 python 手搓（实测
+52.8s + 超时，图没发出去）。已改为：**回复文本里写 `MEDIA:<本地路径>` 即自动作为附件发出**；`image_generate`
+生成的图 gateway 自动附上（正常回复即可，别 python/HTTP 手搓）。channel_prompt 保留 chat_id。
+测试断言同步更新（`tests/gateway/test_llbot_adapter.py` 的 channel_prompt/poke 用例）。
+
 ### 推 fork（脚本化，推荐）
 PAT 存于 **`.env.fork-push`**（已 gitignore，**永不提交**）：
 ```bash
@@ -165,6 +172,8 @@ GitHub → Settings → Developer settings → Tokens 撤销并换新的。
 
 | 提交 | 改动 |
 |---|---|
+| ~~发图指引+base_url~~ | llbot 发图指引去 send_message（改 MEDIA: 自动附着）。base_url 挪 config 与 quality 透传两条已废弃——上游把 quality 做成一等公民、openai provider 自带 config base_url/多 endpoint |
+
 | 合并转发解析 | 合并转发（含嵌套）解析成 JSON 围栏；own/引用下载文件给路径，背景只给名；图片沿用 输入图片/背景图 编号（本次工作，SHA 见 `git log`） |
 | `13f526219` | 群文件走 `get_group_file_url` 下载（`get_file` 不支持群文件 elementType 3）；own 触发 + 引用文件/语音给缓存路径（私聊仍走 `get_file`，群/私已区分） |
 | `efb9eebc9` | fork 推送脚本化（`.env.fork-push` + `scripts/push-fork.sh`，gitignored PAT） |
