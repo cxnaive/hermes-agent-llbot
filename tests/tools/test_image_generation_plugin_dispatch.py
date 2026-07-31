@@ -98,6 +98,61 @@ class TestPluginDispatch:
         assert payload["provider"] == "codex"
         assert payload["aspect_ratio"] == "portrait"
 
+    def test_dispatch_forwards_quality_to_provider(self, monkeypatch, tmp_path):
+        """The agent's optional `quality` arg is forwarded to provider.generate()."""
+        from tools import image_generation_tool
+        from agent import image_gen_registry as registry_module
+        from hermes_cli import plugins as plugins_module
+
+        received = {}
+
+        class _QProvider(ImageGenProvider):
+            @property
+            def name(self) -> str:
+                return "qprov"
+
+            def generate(self, prompt, aspect_ratio="landscape", **kwargs):
+                received.update(kwargs)
+                return {"success": True, "image": "/tmp/q.png", "provider": "qprov"}
+
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        (tmp_path / "config.yaml").write_text("image_gen:\n  provider: qprov\n")
+        monkeypatch.setattr(image_generation_tool, "_read_configured_image_provider", lambda: "qprov")
+        monkeypatch.setattr(plugins_module, "_ensure_plugins_discovered", lambda: None)
+        monkeypatch.setattr(registry_module, "get_provider", lambda name: _QProvider() if name == "qprov" else None)
+
+        dispatched = image_generation_tool._dispatch_to_plugin_provider(
+            "draw cat", "square", quality="high"
+        )
+        assert json.loads(dispatched)["success"] is True
+        assert received.get("quality") == "high"
+
+    def test_dispatch_omits_quality_when_not_given(self, monkeypatch, tmp_path):
+        """No quality arg → provider gets no quality kwarg (uses its default)."""
+        from tools import image_generation_tool
+        from agent import image_gen_registry as registry_module
+        from hermes_cli import plugins as plugins_module
+
+        received = {}
+
+        class _QProvider2(ImageGenProvider):
+            @property
+            def name(self) -> str:
+                return "qprov"
+
+            def generate(self, prompt, aspect_ratio="landscape", **kwargs):
+                received.update(kwargs)
+                return {"success": True, "image": "/tmp/q.png", "provider": "qprov"}
+
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        (tmp_path / "config.yaml").write_text("image_gen:\n  provider: qprov\n")
+        monkeypatch.setattr(image_generation_tool, "_read_configured_image_provider", lambda: "qprov")
+        monkeypatch.setattr(plugins_module, "_ensure_plugins_discovered", lambda: None)
+        monkeypatch.setattr(registry_module, "get_provider", lambda name: _QProvider2() if name == "qprov" else None)
+
+        image_generation_tool._dispatch_to_plugin_provider("draw cat", "square")
+        assert "quality" not in received
+
     def test_unset_provider_keeps_legacy_fal_path(self, monkeypatch):
         """An unrelated API key must not opt the user into paid image generation."""
         from tools import image_generation_tool
