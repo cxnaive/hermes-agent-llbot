@@ -288,7 +288,9 @@ def test_private_message_passes_without_mention():
     event = adapter.handle_message.call_args.args[0]
     assert event.source.chat_id == "private:333"
     assert event.source.chat_type == "dm"
-    assert event.text == "yo"
+    # DM sender is labeled ``昵称 (QQ <id>)`` so the agent can match the speaker
+    # against QQ-numbered identity rules (no mention note in DMs otherwise).
+    assert event.text == "[Bob (QQ 333)] yo"
 
 
 def test_require_mention_disabled_lets_unaddressed_through():
@@ -344,7 +346,9 @@ def test_poke_notice_dispatches_as_text():
 
     _run(go())
     event = adapter.handle_message.call_args.args[0]
-    assert "戳" in event.text and "Bob" in event.text
+    # Poker is labeled with nickname AND QQ number so identity rules can key
+    # off the QQ (nickname alone is spoofable).
+    assert "戳" in event.text and "Bob" in event.text and "QQ 222" in event.text
     assert event.source.chat_type == "group"
     assert event.source.chat_id == "group:5"
 
