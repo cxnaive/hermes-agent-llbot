@@ -724,24 +724,33 @@ class LLBotAdapter(BasePlatformAdapter):
             chat_type = "dm"
             chat_name = user_name or chat_id
 
-        # Surface the mention signal to the agent. @self / @all are stripped
-        # from the body (they're require_mention triggers, not content), so
-        # without this prefix the agent couldn't tell a @bot ping from an
-        # @everyone — both pass the group gate. @others stay inline in the
-        # text (e.g. "@张三"), so the agent already sees who else was tagged.
-        # Mentioner label with QQ number, consistent with observe lines and
-        # quoted messages (``昵称 (QQ <id>)``) so the agent knows who triggered
-        # it by QQ, not just nickname. (The gateway also prefixes the speaker
-        # name for shared group sessions; the QQ here is the part that carries.)
         speaker = f"{user_name} (QQ {user_id})" if user_id else user_name
-        if parsed.mentioned_all:
-            mention_note = f"[{speaker} @全体成员]"
-        elif parsed.mentioned_self:
-            mention_note = f"[{speaker} @你]"
-        elif _wake_match:
-            mention_note = f"[{speaker} 提到了你]"
+        if message_type == "group":
+            # Surface the mention signal to the agent. @self / @all are stripped
+            # from the body (they're require_mention triggers, not content), so
+            # without this prefix the agent couldn't tell a @bot ping from an
+            # @everyone — both pass the group gate. @others stay inline in the
+            # text (e.g. "@张三"), so the agent already sees who else was tagged.
+            # Mentioner label with QQ number, consistent with observe lines and
+            # quoted messages (``昵称 (QQ <id>)``) so the agent knows who triggered
+            # it by QQ, not just nickname. (The gateway also prefixes the speaker
+            # name for shared group sessions; the QQ here is the part that carries.)
+            if parsed.mentioned_all:
+                mention_note = f"[{speaker} @全体成员]"
+            elif parsed.mentioned_self:
+                mention_note = f"[{speaker} @你]"
+            elif _wake_match:
+                mention_note = f"[{speaker} 提到了你]"
+            else:
+                mention_note = ""
         else:
-            mention_note = ""
+            # DMs carry no mention gate, so without a prefix the agent sees
+            # bare text with NO sender identity at all — it can't match the
+            # speaker against QQ-numbered rules (e.g. who is the admin). Label
+            # the sender in the same ``昵称 (QQ <id>)`` form used everywhere
+            # else (mention notes, observe lines, quotes) so identity checks
+            # key off the QQ number, not the spoofable nickname.
+            mention_note = f"[{speaker}]"
 
         body = parsed.text
         # Don't prefix slash commands with the mention note — get_command()
@@ -1161,7 +1170,10 @@ class LLBotAdapter(BasePlatformAdapter):
                 "become a 合并转发 card."
             )
         return base + (
-            " [DM] 1-on-1; long replies split into multiple messages (no card)."
+            " [DM] 1-on-1 — the sender is labeled [昵称 (QQ <number>)] on the "
+            "message; match the QQ number (not the nickname) against any "
+            "QQ-numbered identity rules. Long replies split into multiple "
+            "messages (no card)."
         )
 
     async def _handle_poke(self, payload: dict) -> None:
@@ -1203,6 +1215,12 @@ class LLBotAdapter(BasePlatformAdapter):
             chat_name = user_name or chat_id
 
         text = onebot.poke_notice_to_text(user_name)
+        # Label the poker with their QQ number (same ``昵称 (QQ <id>)`` form as
+        # messages) — poke text otherwise carries only the nickname, and in
+        # DMs there is no mention note at all, so the agent couldn't match the
+        # poker against QQ-numbered identity rules.
+        if user_id:
+            text = f"{text} [QQ {user_id}]"
         # Identical context handling as a normal message trigger: drain recent
         # observed chatter (images described to text + path legend, NOT
         # attached) and surface the [now:] marker, so a poke isn't
