@@ -55,7 +55,10 @@
 
 ### 触发消息里的 @ 信号
 `[昵称 (QQ N) @你]` / `[昵称 (QQ N) @全体成员]` / `[昵称 (QQ N) 提到了你]`（唤醒词）注入 body。
-gateway 还会给共享群会话加发言者前缀 `[昵称]`（name-only，run.py:8820）——所以名字会出现两次，QQ 在 mention note 里。
+**私聊无 @ 门，改注入 `[昵称 (QQ N)]` 纯身份前缀**——否则私聊正文是裸文本，agent 没有任何
+说话人 QQ 号，无法对 SOUL.md 里按 QQ 号写的身份规则（谁是管理员/老师）。poke 文本同样
+追加 `[QQ N]`。gateway 还会给共享群会话加发言者前缀 `[昵称]`（name-only，run.py:12830）——
+所以名字会出现两次，QQ 在 mention note / DM 前缀里。
 
 ### 合并转发（forward，可嵌套）
 - 触发/引用里的 forward 段经 `get_forward_msg(id)` 展开成**【合并转发消息 · N条 · 仅作上下文】```json …```【合并转发结束】** 围栏：
@@ -188,6 +191,8 @@ GitHub → Settings → Developer settings → Tokens 撤销并换新的。
 
 | 提交 | 改动 |
 |---|---|
+| 私聊身份标注 | 私聊消息注入 `[昵称 (QQ N)]` 前缀（对齐群聊 mention note 格式），poke 追加 `[QQ N]`；`[DM]` channel_prompt 提示按 QQ 号核身份。修复：私聊 agent 拿不到说话人 QQ 号，SOUL.md 按 QQ 写的身份规则（老师/同学）对不上（SHA 见 `git log`） |
+| ~~media 去重收窄~~（已废弃） | 跨-turn media 去重收窄到当前 turn + `skip_image_json`（修"重发同图被吞"/"首发吞图"）。**rebase 到上游时 drop**——上游已重写 `_history_media_paths_for_session` 排除整个当前 turn，且对显式 `MEDIA:` 不做 history 去重，两个 bug 上游都没有 |
 | 发图指引+base_url | llbot 发图指引去 send_message（改 MEDIA: 自动附着）；openai image base_url 挪 config（消 OPENAI_BASE_URL 警告）（SHA 见 `git log`） |
 | 图像 quality 自控 | `image_generate` 加可选 `quality`（low/medium/high）参数；openai provider 读 kwarg 覆盖档（本 fork 私有，上游共享文件，rebase 冲突点；SHA 见 `git log`） |
 | 合并转发解析 | 合并转发（含嵌套）解析成 JSON 围栏；own/引用下载文件给路径，背景只给名；图片沿用 输入图片/背景图 编号（本次工作，SHA 见 `git log`） |
