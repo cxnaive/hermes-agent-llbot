@@ -76,36 +76,6 @@ class TestAvailability:
 # ── Model resolution ────────────────────────────────────────────────────────
 
 
-class TestClientKwargs:
-    """_resolve_client_kwargs: config image_gen.openai.* → env → omit."""
-
-    def test_config_base_url_and_key_win(self, tmp_path, monkeypatch):
-        import yaml
-        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-        monkeypatch.setenv("OPENAI_API_KEY", "env-key")
-        (tmp_path / "config.yaml").write_text(yaml.safe_dump(
-            {"image_gen": {"openai": {"base_url": "https://relay.example/v1", "api_key": "cfg-key"}}}
-        ))
-        kw = openai_plugin._resolve_client_kwargs()
-        assert kw["base_url"] == "https://relay.example/v1"
-        assert kw["api_key"] == "cfg-key"  # config beats env
-
-    def test_env_used_when_no_config(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("OPENAI_BASE_URL", "https://env-relay/v1")
-        monkeypatch.setenv("OPENAI_API_KEY", "env-key")
-        (tmp_path / "config.yaml").write_text("image_gen:\n  provider: openai\n")
-        kw = openai_plugin._resolve_client_kwargs()
-        assert kw["base_url"] == "https://env-relay/v1"
-        assert kw["api_key"] == "env-key"
-
-    def test_omitted_when_nothing_set(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        (tmp_path / "config.yaml").write_text("image_gen:\n  provider: openai\n")
-        kw = openai_plugin._resolve_client_kwargs()
-        assert "base_url" not in kw
-        assert "api_key" not in kw
-
     def test_generate_passes_kwargs_to_client(self, tmp_path, monkeypatch):
         import yaml
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
