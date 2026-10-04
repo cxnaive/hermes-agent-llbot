@@ -57,13 +57,15 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
-# Import the bundled provider as a real module. The memory-plugin loader
-# registers ``plugins.memory`` as a package before exec'ing any provider, so
-# this resolves whether or not the parent was loaded first.
-from plugins.memory.hindsight import (
-    HindsightMemoryProvider,
-    _sanitize_bank_segment,
-)
+# Import the hindsight provider however it's installed (bundled under
+# ``plugins.memory.hindsight`` or catalog-installed under ``~/.hermes/plugins/``).
+# ``import_provider_module`` resolves both so this subclass survives the bundled
+# copy leaving core for the plugin catalog (#4cbf862abe).
+from plugins.memory import import_provider_module as _import_hindsight
+
+_hindsight_mod = _import_hindsight("hindsight")
+HindsightMemoryProvider = _hindsight_mod.HindsightMemoryProvider
+_sanitize_bank_segment = _import_hindsight("hindsight", submodule="settings")._sanitize_bank_segment
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +101,8 @@ class SessionKeyHindsightProvider(HindsightMemoryProvider):
 
     def _resolve_session_bank(self, session_key: str, kwargs: dict) -> str:
         """Render the per-chat ``bank_id`` from the configured template."""
-        template = str(self._config.get("session_key_bank_template") or "").strip() or "{session_key}"
+        cfg = self._config if isinstance(self._config, dict) else {}
+        template = str(cfg.get("session_key_bank_template") or "").strip() or "{session_key}"
 
         decomp = _decompose_session_key(session_key)
         # agent_init passes chat_type/chat_id/user_id as authoritative kwargs;
