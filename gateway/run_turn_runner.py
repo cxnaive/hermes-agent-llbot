@@ -1206,12 +1206,29 @@ class TurnRunner:
         pending_lock = threading.Lock()
 
         def deliver(message: str) -> None:
-            if self._status_live():
-                self._send_status_text(
-                    message,
-                    _interim_metadata(_non_conversational_metadata(ctx._status_thread_metadata, platform=ctx.source.platform)),
+            if not self._status_live():
+                return
+            # Route the review summary through send_or_update_status when the adapter
+            # supports it: adapters with a status_channel (e.g. llbot) redirect it to the
+            # ops channel instead of posting "💾 Self-improvement review …" into the
+            # originating chat. Falls back to _send_status_text elsewhere.
+            from gateway.run import _send_or_update_status_coro
+            sender = getattr(ctx._status_adapter, "send_or_update_status", None)
+            if callable(sender):
+                self._schedule(
+                    _send_or_update_status_coro(
+                        ctx._status_adapter, ctx._status_chat_id, "background_review",
+                        message,
+                        _interim_metadata(_non_conversational_metadata(ctx._status_thread_metadata, platform=ctx.source.platform)),
+                    ),
                     "background_review_callback scheduling error",
                 )
+                return
+            self._send_status_text(
+                message,
+                _interim_metadata(_non_conversational_metadata(ctx._status_thread_metadata, platform=ctx.source.platform)),
+                "background_review_callback scheduling error",
+            )
 
         def release() -> None:
             release_evt.set()
