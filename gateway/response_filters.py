@@ -123,8 +123,23 @@ def is_machinery_display_kind(display_kind: Any) -> bool:
     return display_kind in MACHINERY_DISPLAY_KINDS
 
 
+def _respect_model_silence() -> bool:
+    """``gateway.respect_model_silence`` config: when true, a bare silence marker
+    (NO_REPLY/[SILENT]) is honored for EVERY turn — the gateway stops second-guessing
+    the model's "don't reply" decision based on display_kind / reply_expected and never
+    substitutes the ⚠️ "returned only a silence marker" fallback. Default false keeps
+    upstream behavior (only machinery turns or explicitly-unaddressed ones may go silent)."""
+    try:
+        from hermes_cli.config import cfg_get, load_config_readonly
+        return bool(cfg_get(load_config_readonly(), "gateway", "respect_model_silence", default=False))
+    except Exception:
+        return False
+
+
 def silence_allowed(display_kind: Any, reply_expected: Optional[bool] = None) -> bool:
     """Whether a successful bare silence marker may remain silent for this turn."""
+    if _respect_model_silence():
+        return True
     return is_machinery_display_kind(display_kind) or reply_expected is False
 
 
