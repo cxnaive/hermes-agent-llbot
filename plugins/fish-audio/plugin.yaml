@@ -1,0 +1,30 @@
+name: fish-audio
+version: 0.1.0
+description: Fish Audio speech synthesis through the native Hermes TTS provider interface.
+config_schema:
+  api_key:
+    type: secret
+    env: FISH_AUDIO_API_KEY
+    label: Fish Audio API Key
+    description: API credential stored by Hermes in the active profile's .env.
+  api_url:
+    type: str
+    default: https://api.fish.audio
+    label: API URL
+  speech_model:
+    type: str
+    default: drama-3
+    choices: [drama-3, s2.1-pro, s2.1-pro-free, s2-pro, s1]
+    label: Speech model
+  reference_id:
+    type: str
+    default: ''
+    label: Voice reference ID
+  speed:
+    type: float
+    default: 1.0
+    label: Speech speed
+  timeout:
+    type: int
+    default: 120
+    label: Request timeout in seconds
