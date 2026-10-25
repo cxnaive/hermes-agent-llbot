@@ -23,9 +23,10 @@ resolves ``{session_key}`` / ``{chat_id}`` / ``{chat_type}`` / ... to set
 
 ``bank_id`` is a **per-call argument** in every Hindsight API call
 (``aretain_batch`` / ``arecall`` / ``areflect`` / tools), not baked into the
-client at construction. So overriding ``self._bank_id`` after
-``super().initialize()`` reroutes every subsequent call — no client rebuild
-needed (unlike the supermemory subclass).
+client at construction. After ``super().initialize()``, select the chat bank and rebuild the parent's
+write-bank collection so retain and recall use the same partition. Mark the
+bank source as chat-scoped so a session switch cannot replace it with a
+session-template bank.
 
 ``document_id`` is left untouched: the parent sets it to
 ``{session_id}-{timestamp}`` (per-process), so within one bank you get one
@@ -139,6 +140,8 @@ class SessionKeyHindsightProvider(HindsightMemoryProvider):
             return
 
         self._bank_id = self._resolve_session_bank(session_key, kwargs)
+        self._bank_source = "gateway_session_key"
+        self._write_bank_ids = self._build_write_bank_ids()
         logger.info(
             "session-key-hindsight: bank=%s (session_key=%s)",
             self._bank_id, session_key,

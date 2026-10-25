@@ -1,7 +1,7 @@
 name: session-key-hindsight
-version: 1.0.0
+version: 1.0.1
 description: "Hindsight scoped by gateway_session_key (per-chat). Subclasses bundled hindsight: inherits knowledge graph retain/recall/reflect + multi-strategy retrieval, only derives bank_id from the gateway session key."
 pip_dependencies:
-  - hindsight-client>=0.4.22
+  - hindsight-client>=0.10.1,<1
 hooks:
   - on_session_end
